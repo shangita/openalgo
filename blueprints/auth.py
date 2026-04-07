@@ -131,6 +131,14 @@ def login():
         password = request.form["password"]
 
         if authenticate_user(username, password):
+            # SEBI Compliance: Check if 2FA (TOTP) is enforced
+            sebi_2fa = os.getenv("SEBI_ENFORCE_2FA", "false").lower() in ("true", "1", "yes")
+            if sebi_2fa:
+                # Store username temporarily and require TOTP verification
+                session["pending_2fa_user"] = username
+                logger.info(f"Login credentials OK for {username}, awaiting TOTP verification (SEBI 2FA)")
+                return jsonify({"status": "2fa_required", "message": "TOTP verification required"}), 200
+
             session["user"] = username  # Set the username in the session
             logger.info(f"Login success for user: {username}")
             # Redirect to broker login without marking as fully logged in
@@ -149,6 +157,29 @@ def login():
         return redirect("/dashboard")
 
     return redirect("/login")
+
+
+@auth_bp.route("/verify-2fa", methods=["POST"])
+@limiter.limit(LOGIN_RATE_LIMIT_MIN)
+def verify_2fa():
+    """SEBI Compliance: Verify TOTP code after password authentication."""
+    username = session.get("pending_2fa_user")
+    if not username:
+        return jsonify({"status": "error", "message": "No pending 2FA verification"}), 400
+
+    totp_code = request.form.get("totp_code") or (request.get_json() or {}).get("totp_code")
+    if not totp_code:
+        return jsonify({"status": "error", "message": "TOTP code is required"}), 400
+
+    user = find_user_by_username(username)
+    if user and user.verify_totp(totp_code):
+        session.pop("pending_2fa_user", None)
+        session["user"] = username
+        logger.info(f"2FA verification success for user: {username}")
+        return jsonify({"status": "success"}), 200
+    else:
+        logger.warning(f"2FA verification failed for user: {username}")
+        return jsonify({"status": "error", "message": "Invalid TOTP code"}), 401
 
 
 @auth_bp.route("/broker", methods=["GET", "POST"])

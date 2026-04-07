@@ -25,8 +25,15 @@ IST = pytz.timezone("Asia/Kolkata")
 def get_last_session_boundary():
     """
     Get the most recent session boundary time (SESSION_EXPIRY_TIME)
-    Returns datetime in IST
+    Returns naive UTC datetime for comparison with SQLite's naive UTC timestamps.
+
+    IMPORTANT: SQLite stores datetimes as naive UTC strings (e.g. "2026-04-06 03:50:xx").
+    Comparing with an IST-aware datetime causes an ASCII string bug: the space in
+    "2026-04-06 03:50" (0x20) compares as less than 'T' in "2026-04-06T03:00:00+05:30" (0x54),
+    so ALL same-day positions are incorrectly matched and their today_realized_pnl is reset.
+    Fix: convert boundary to naive UTC before returning.
     """
+    import pytz as _pytz
     session_expiry_str = os.getenv("SESSION_EXPIRY_TIME", "03:00")
     reset_hour, reset_minute = map(int, session_expiry_str.split(":"))
 
@@ -34,9 +41,12 @@ def get_last_session_boundary():
     today_boundary = now.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
 
     if now >= today_boundary:
-        return today_boundary
+        boundary_ist = today_boundary
     else:
-        return today_boundary - timedelta(days=1)
+        boundary_ist = today_boundary - timedelta(days=1)
+
+    # Convert to naive UTC so SQLite string comparison works correctly
+    return boundary_ist.astimezone(_pytz.UTC).replace(tzinfo=None)
 
 
 def catch_up_mis_squareoff():

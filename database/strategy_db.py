@@ -53,6 +53,15 @@ class Strategy(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    # SEBI Compliance: Exchange Algo-ID Registration (April 2026)
+    exchange_algo_id = Column(String(128), nullable=True, unique=True)
+    algo_registration_status = Column(
+        String(20), nullable=True, default="unregistered"
+    )  # unregistered / pending / submitted / approved / rejected / expired
+    algo_registered_at = Column(DateTime(timezone=True), nullable=True)
+    algo_expires_at = Column(DateTime(timezone=True), nullable=True)
+    algo_broker_code = Column(String(64), nullable=True)
+
     # Relationships
     symbol_mappings = relationship(
         "StrategySymbolMapping", back_populates="strategy", cascade="all, delete-orphan"

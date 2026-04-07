@@ -360,28 +360,30 @@ class PositionManager:
             import os
             from datetime import datetime, time, timedelta
 
-            # Get session expiry time from config (e.g., '03:00')
+            # Get session expiry time from config (e.g., '03:00' = 3:00 AM IST)
+            # SESSION_EXPIRY_TIME is in IST; convert to naive UTC for comparison
+            # with SQLite's func.now() which stores UTC.
+            import pytz as _pytz
+            _IST = _pytz.timezone("Asia/Kolkata")
             session_expiry_str = os.getenv("SESSION_EXPIRY_TIME", "03:00")
             expiry_hour, expiry_minute = map(int, session_expiry_str.split(":"))
 
-            # Get current time
+            # Build boundary in IST then convert to naive UTC
+            now_ist = datetime.now(_IST)
+            today_boundary_ist = now_ist.replace(
+                hour=expiry_hour, minute=expiry_minute, second=0, microsecond=0
+            )
+            if now_ist >= today_boundary_ist:
+                boundary_ist = today_boundary_ist
+            else:
+                boundary_ist = today_boundary_ist - timedelta(days=1)
+
+            # Naive UTC for comparison with SQLite timestamps (stored as naive UTC by func.now())
+            last_session_expiry = boundary_ist.astimezone(_pytz.UTC).replace(tzinfo=None)
+
+            # Keep these for the date-based checks below
             now = datetime.now()
             today = now.date()
-
-            # Calculate if we're in a new session
-            session_expiry_time = time(expiry_hour, expiry_minute)
-
-            # Determine last session expiry
-            if now.time() < session_expiry_time:
-                # We're before today's session expiry (e.g., before 3 AM)
-                # Last session expired yesterday at 3 AM
-                last_session_expiry = datetime.combine(
-                    today - timedelta(days=1), session_expiry_time
-                )
-            else:
-                # We're after today's session expiry (e.g., after 3 AM)
-                # Last session expired today at 3 AM
-                last_session_expiry = datetime.combine(today, session_expiry_time)
 
             # Get all positions (including zero quantity ones from current session)
             positions_query = SandboxPositions.query.filter(

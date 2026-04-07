@@ -626,8 +626,6 @@ class TelegramBotService:
             Application,
             CallbackQueryHandler,
             CommandHandler,
-            MessageHandler,
-            filters,
         )
 
         retry_count = 0
@@ -654,9 +652,6 @@ class TelegramBotService:
                 self.application.add_handler(CommandHandler("quote", self.cmd_quote))
                 self.application.add_handler(CommandHandler("chart", self.cmd_chart))
                 self.application.add_handler(CommandHandler("menu", self.cmd_menu))
-                self.application.add_handler(CommandHandler("ai", self.cmd_ai))
-                # AI: plain text messages routed through OpenRouter
-                self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_ai_message))
 
                 # Add callback query handler for inline buttons
                 self.application.add_handler(CallbackQueryHandler(self.button_callback))
@@ -2150,44 +2145,6 @@ class TelegramBotService:
         except Exception as e:
             logger.exception(f"Error in broadcast: {str(e)}")
             return 0, 0
-
-
-    async def cmd_ai(self, update, context):
-        """Handle /ai command"""
-        await self.handle_ai_message(update, context)
-
-    async def handle_ai_message(self, update, context):
-        """Handle plain text messages via OpenRouter AI -> OpenAlgo execution"""
-        user = update.effective_user
-        telegram_user = get_telegram_user(user.id)
-
-        if not telegram_user:
-            await update.message.reply_text("Please link your account first using /link")
-            return
-
-        client = self._get_sdk_client(user.id)
-        if not client:
-            await update.message.reply_text("Failed to connect to OpenAlgo")
-            return
-
-        user_text = update.message.text or ""
-        if user_text.lower().startswith("/ai"):
-            user_text = user_text[3:].strip()
-        if not user_text:
-            await update.message.reply_text("Please send a trading command. Example: buy 65 nifty futures")
-            return
-
-        thinking_msg = await update.message.reply_text("Thinking...")
-
-        import asyncio
-        from services.openrouter_service import ask_openrouter, execute_intent
-
-        loop = asyncio.get_event_loop()
-        intent_data = await loop.run_in_executor(None, ask_openrouter, user_text)
-        reply = await loop.run_in_executor(None, execute_intent, intent_data, client)
-
-        await thinking_msg.edit_text(reply)
-        log_command(user.id, "ai", update.effective_chat.id)
 
 
 # Create global instance

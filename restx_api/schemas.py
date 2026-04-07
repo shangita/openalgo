@@ -43,6 +43,8 @@ class OrderSchema(Schema):
         missing=0,
         validate=validate.Range(min=0, error="Disclosed quantity must be a non-negative integer."),
     )
+    # SEBI Algo-ID: exchange-assigned identifier for this algorithm (mandatory from April 2026)
+    algo_id = fields.Str(missing=None, allow_none=True, validate=validate.Length(max=128))
     underlying_ltp = fields.Float(
         missing=None, allow_none=True
     )  # Optional: passed from options order for execution reference
@@ -63,6 +65,8 @@ class SmartOrderSchema(Schema):
         validate=validate.Range(min=0, error="Quantity must be a non-negative number."),
     )
     position_size = fields.Float(required=True)
+    # SEBI Algo-ID
+    algo_id = fields.Str(missing=None, allow_none=True, validate=validate.Length(max=128))
     pricetype = fields.Str(
         missing="MARKET", validate=validate.OneOf(["MARKET", "LIMIT", "SL", "SL-M"])
     )
@@ -135,6 +139,8 @@ class BasketOrderItemSchema(Schema):
     exchange = fields.Str(required=True, validate=validate.OneOf(VALID_EXCHANGES))
     symbol = fields.Str(required=True)
     action = fields.Str(required=True, validate=validate.OneOf(["BUY", "SELL", "buy", "sell"]))
+    # SEBI Algo-ID
+    algo_id = fields.Str(missing=None, allow_none=True, validate=validate.Length(max=128))
     quantity = fields.Float(
         required=True, validate=validate.Range(min=0, min_inclusive=False, error="Quantity must be a positive number.")
     )
@@ -173,6 +179,8 @@ class SplitOrderSchema(Schema):
     exchange = fields.Str(required=True, validate=validate.OneOf(VALID_EXCHANGES))
     symbol = fields.Str(required=True)
     action = fields.Str(required=True, validate=validate.OneOf(["BUY", "SELL", "buy", "sell"]))
+    # SEBI Algo-ID
+    algo_id = fields.Str(missing=None, allow_none=True, validate=validate.Length(max=128))
     quantity = fields.Float(
         required=True,
         validate=validate.Range(min=0, min_inclusive=False, error="Total quantity must be a positive number."),
@@ -205,6 +213,8 @@ class SplitOrderSchema(Schema):
 class OptionsOrderSchema(Schema):
     apikey = fields.Str(required=True, validate=validate.Length(min=1, max=256))
     strategy = fields.Str(required=True)
+    # SEBI Algo-ID
+    algo_id = fields.Str(missing=None, allow_none=True, validate=validate.Length(max=128))
     underlying = fields.Str(
         required=True
     )  # Underlying symbol (NIFTY, BANKNIFTY, RELIANCE, or NIFTY28NOV24FUT)
@@ -290,6 +300,8 @@ class OptionsMultiOrderSchema(Schema):
 
     apikey = fields.Str(required=True, validate=validate.Length(min=1, max=256))
     strategy = fields.Str(required=True)
+    # SEBI Algo-ID
+    algo_id = fields.Str(missing=None, allow_none=True, validate=validate.Length(max=128))
     underlying = fields.Str(required=True)  # Underlying symbol (NIFTY, BANKNIFTY, RELIANCE)
     exchange = fields.Str(required=True, validate=validate.OneOf(VALID_EXCHANGES))  # Exchange (NSE_INDEX, NSE, BSE_INDEX, BSE)
     expiry_date = fields.Str(

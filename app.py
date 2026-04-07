@@ -220,8 +220,16 @@ def create_app():
     # Initialize Flask application
     app = Flask(__name__)
 
+    # Trust reverse proxy headers (X-Forwarded-Proto, X-Forwarded-For, etc.)
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     # Initialize SocketIO
     socketio.init_app(app)  # Link SocketIO to the Flask app
+
+    # SEBI Compliance: IP whitelisting middleware
+    from utils.ip_whitelist import init_ip_whitelist
+    init_ip_whitelist(app)
 
     # Initialize EventBus subscribers
     from subscribers import register_all as register_event_subscribers
@@ -273,11 +281,13 @@ def create_app():
 
     # Add cookie prefix for HTTPS environments
     if USE_HTTPS:
-        app.config["SESSION_COOKIE_NAME"] = f"__Secure-{session_cookie_name}"
+        # __Secure- prefix disabled for reverse proxy compatibility
+        pass  # __Secure- prefix disabled for reverse proxy compatibility
 
     # CSRF configuration from environment variables
     csrf_enabled = os.getenv("CSRF_ENABLED", "TRUE").upper() == "TRUE"
     app.config["WTF_CSRF_ENABLED"] = csrf_enabled
+    app.config["WTF_CSRF_SSL_STRICT"] = False  # Disable strict referer check for reverse proxy
 
     # Configure CSRF cookie security to match session cookie
     csrf_cookie_name = os.getenv("CSRF_COOKIE_NAME", "csrf_token")
@@ -290,7 +300,8 @@ def create_app():
 
     # Add cookie prefix for CSRF token in HTTPS environments
     if USE_HTTPS:
-        app.config["WTF_CSRF_COOKIE_NAME"] = f"__Secure-{csrf_cookie_name}"
+        # __Secure- prefix disabled for reverse proxy compatibility
+        pass  # __Secure- prefix disabled for reverse proxy compatibility
 
     # Parse CSRF time limit from environment
     csrf_time_limit = os.getenv("CSRF_TIME_LIMIT", "").strip()
@@ -833,4 +844,4 @@ if __name__ == "__main__":
             "*.bak",
         ]
     }
-    socketio.run(app, host=host_ip, port=port, debug=debug, reloader_options=reloader_options)
+    socketio.run(app, host=host_ip, port=port, debug=debug, allow_unsafe_werkzeug=True, reloader_options=reloader_options)

@@ -32,7 +32,7 @@ def get_session_expiry_time():
     now_ist = now_utc.astimezone(pytz.timezone("Asia/Kolkata"))
 
     # Get configured expiry time or default to 3 AM
-    expiry_time = os.getenv("SESSION_EXPIRY_TIME", "03:00")
+    expiry_time = os.getenv("SESSION_EXPIRY_TIME", "08:45")  # SEBI: Pre-market logout before 9:15 AM IST
     hour, minute = map(int, expiry_time.split(":"))
 
     target_time_ist = now_ist.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -77,7 +77,7 @@ def is_session_valid():
     login_time = datetime.fromisoformat(session["login_time"])
 
     # Get configured expiry time
-    expiry_time = os.getenv("SESSION_EXPIRY_TIME", "03:00")
+    expiry_time = os.getenv("SESSION_EXPIRY_TIME", "08:45")  # SEBI: Pre-market logout before 9:15 AM IST
     hour, minute = map(int, expiry_time.split(":"))
 
     # Get today's expiry time

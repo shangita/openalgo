@@ -1,4 +1,5 @@
 import copy
+import os
 import importlib
 import traceback
 from typing import Any, Dict, Optional, Tuple
@@ -16,6 +17,9 @@ from utils.constants import (
 )
 from utils.event_bus import bus
 from utils.logging import get_logger
+
+# SEBI Compliance: Algo-ID validation
+SEBI_ENFORCE_ALGO_ID = os.environ.get("SEBI_ENFORCE_ALGO_ID", "false").lower() in ("true", "1", "yes")
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -309,6 +313,26 @@ def place_order(
             api_key=api_key or "",
         ))
         return False, error_response, 400
+
+    # SEBI Compliance: Validate algo_id is present if enforcement is enabled
+    if SEBI_ENFORCE_ALGO_ID:
+        algo_id = order_data.get("algo_id")
+        if not algo_id:
+            error_response = {
+                "status": "error",
+                "message": "SEBI compliance: algo_id is required for all algorithmic orders. "
+                           "Register your strategy with the exchange to obtain an Algo-ID.",
+            }
+            safe_request = {k: v for k, v in original_data.items() if k != "apikey"}
+            bus.publish(OrderFailedEvent(
+                mode="live",
+                api_type="placeorder",
+                request_data=safe_request,
+                response_data=error_response,
+                error_message="Missing SEBI algo_id",
+                api_key=api_key or "",
+            ))
+            return False, error_response, 403
 
     # Case 1: API-based authentication
     if api_key and not (auth_token and broker):

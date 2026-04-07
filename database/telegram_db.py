@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -92,7 +93,7 @@ class TelegramUser(Base):
     __tablename__ = "telegram_users"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, unique=True, nullable=False, index=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=False, index=True)
     openalgo_username = Column(String(255), nullable=False, index=True)
     encrypted_api_key = Column(Text)  # Encrypted API key for secure storage
     host_url = Column(String(500))  # OpenAlgo host URL
@@ -139,7 +140,7 @@ class CommandLog(Base):
 
     id = Column(Integer, primary_key=True)
     telegram_id = Column(
-        Integer, ForeignKey("telegram_users.telegram_id"), nullable=False, index=True
+        BigInteger, ForeignKey("telegram_users.telegram_id"), nullable=False, index=True
     )
     command = Column(String(100), nullable=False)
     chat_id = Column(Integer)
@@ -156,7 +157,7 @@ class NotificationQueue(Base):
     __tablename__ = "notification_queue"
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, ForeignKey("telegram_users.telegram_id"), nullable=False)
+    telegram_id = Column(BigInteger, ForeignKey("telegram_users.telegram_id"), nullable=False)
     message = Column(Text, nullable=False)
     priority = Column(Integer, default=5)
     status = Column(String(20), default="pending", index=True)
@@ -173,7 +174,7 @@ class UserPreference(Base):
 
     __tablename__ = "user_preferences"
 
-    telegram_id = Column(Integer, ForeignKey("telegram_users.telegram_id"), primary_key=True)
+    telegram_id = Column(BigInteger, ForeignKey("telegram_users.telegram_id"), primary_key=True)
     order_notifications = Column(Boolean, default=True)
     trade_notifications = Column(Boolean, default=True)
     pnl_notifications = Column(Boolean, default=True)

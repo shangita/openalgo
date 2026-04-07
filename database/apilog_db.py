@@ -41,6 +41,10 @@ class OrderLog(Base):
     request_data = Column(Text, nullable=False)
     response_data = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), default=func.now())
+    # SEBI Compliance: Additional audit fields (April 2026)
+    client_ip = Column(Text, nullable=True)
+    algo_id = Column(Text, nullable=True)
+    user_id = Column(Text, nullable=True)
 
 
 def init_db():
@@ -53,7 +57,7 @@ def init_db():
 executor = ThreadPoolExecutor(10)  # Increased from 2 to 10 for better concurrency
 
 
-def async_log_order(api_type, request_data, response_data):
+def async_log_order(api_type, request_data, response_data, client_ip=None, algo_id=None, user_id=None):
     try:
         # Serialize JSON data for storage
         request_json = json.dumps(request_data)
@@ -63,11 +67,18 @@ def async_log_order(api_type, request_data, response_data):
         ist = pytz.timezone("Asia/Kolkata")
         now_ist = datetime.now(ist)
 
+        # SEBI: Extract algo_id from request if not passed explicitly
+        if not algo_id and isinstance(request_data, dict):
+            algo_id = request_data.get("algo_id")
+
         order_log = OrderLog(
             api_type=api_type,
             request_data=request_json,
             response_data=response_json,
             created_at=now_ist,
+            client_ip=client_ip,
+            algo_id=algo_id,
+            user_id=user_id,
         )
         db_session.add(order_log)
         db_session.commit()

@@ -1,0 +1,11 @@
+{
+    "Plugin Name": "mt5",
+    "Plugin URI": "https://openalgo.in",
+    "Description": "MetaTrader 5 Broker Plugin for Forex/CFD via Windows VPS Bridge",
+    "Version": "1.0",
+    "Author": "PARAM Capital",
+    "Author URI": "https://paramcapital.in",
+    "supported_exchanges": ["FOREX", "CFD", "COMMODITY", "CRYPTO", "INDEX"],
+    "broker_type": "FX_cfd",
+    "leverage_config": true
+}
