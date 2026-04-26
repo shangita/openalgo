@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HFT Regime Monitor · PARAM Capital</title>
+<style>
+:root {
+  --bg: #0a0e1a; --bg2: #111827; --bg3: #1a2235; --bg4: #1e2840;
+  --border: #2a3550; --border2: #3a4a6a;
+  --text: #e2e8f0; --muted: #64748b; --dim: #94a3b8;
+  --calm-s: #10b981; --calm-t: #34d399; --vol: #f59e0b;
+  --noise: #ef4444; --qrisk: #8b5cf6; --mixed: #06b6d4;
+  --accent: #3b82f6; --accent2: #2563eb;
+  --red: #ef4444; --green: #10b981; --yellow: #f59e0b; --purple: #8b5cf6;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace; font-size: 13px; min-height: 100vh; }
+
+/* ── Header ─────────────────────────────────────────── */
+.header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.header-brand { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.5px; }
+.header-sub { color: var(--muted); font-size: 11px; }
+.header-spacer { flex: 1; }
+.back-link { color: var(--muted); text-decoration: none; font-size: 11px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; }
+.back-link:hover { color: var(--text); border-color: var(--border2); }
+#clock { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* ── Control bar ────────────────────────────────────── */
+.ctrl-bar { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 8px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ctrl-label { color: var(--muted); font-size: 11px; }
+.btn { border: none; border-radius: 5px; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600; padding: 6px 14px; transition: all .15s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent2); }
+.btn-primary:disabled { background: #374151; color: var(--muted); cursor: default; }
+.btn-danger { background: #7f1d1d; color: #fca5a5; }
+.btn-danger:hover { background: #991b1b; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.status-dot.ok    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.warn  { background: var(--yellow); }
+.status-dot.off   { background: var(--muted); }
+.status-dot.error { background: var(--red); }
+#conn-status { font-size: 11px; }
+
+/* ── Waiting overlay ────────────────────────────────── */
+.waiting-banner { background: #1a1408; border: 1px solid #78350f; border-radius: 8px; padding: 12px 18px; margin: 12px 20px; color: #fbbf24; font-size: 12px; display: none; }
+.waiting-banner.show { display: flex; align-items: center; gap: 10px; }
+.spinner { width: 16px; height: 16px; border: 2px solid #78350f; border-top-color: #fbbf24; border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Grid ───────────────────────────────────────────── */
+.main-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 12px 20px; }
+@media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+
+/* ── Instrument card ────────────────────────────────── */
+.inst-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.inst-header { padding: 10px 14px 8px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.inst-name { font-size: 13px; font-weight: 700; color: var(--text); }
+.inst-sym { font-size: 10px; color: var(--muted); margin-left: auto; }
+.regime-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: .5px; }
+.r-CALM_STRUCTURAL { background: #052e16; color: var(--calm-s); border: 1px solid #065f46; }
+.r-CALM_TRANSIENT  { background: #022c22; color: var(--calm-t); border: 1px solid #047857; }
+.r-VOLATILE_ACTIVE { background: #451a03; color: var(--vol);    border: 1px solid #92400e; }
+.r-NOISE           { background: #450a0a; color: var(--noise);  border: 1px solid #991b1b; }
+.r-QUIET_RISK      { background: #2e1065; color: var(--qrisk);  border: 1px solid #5b21b6; }
+.r-MIXED           { background: #082f49; color: var(--mixed);  border: 1px solid #0e7490; }
+.r-LOADING         { background: var(--bg4); color: var(--muted); border: 1px solid var(--border); }
+
+.inst-body { padding: 12px 14px; }
+
+/* LTP row */
+.ltp-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.ltp-val { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.ltp-chg { font-size: 12px; font-variant-numeric: tabular-nums; }
+.ltp-chg.up   { color: var(--green); }
+.ltp-chg.down { color: var(--red); }
+.spread-badge { margin-left: auto; font-size: 10px; padding: 2px 7px; border-radius: 4px; }
+
+/* Bid-ask */
+.ba-row { display: flex; gap: 8px; margin-bottom: 10px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.ba-bid { color: var(--green); }
+.ba-ask { color: var(--red); }
+.ba-sep { color: var(--muted); }
+.imb-bar-wrap { flex: 1; display: flex; align-items: center; gap: 6px; }
+.imb-bar-outer { flex: 1; height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; }
+.imb-bar-inner { height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
+
+/* KPI grid */
+.kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
+.kpi-cell { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+.kpi-label { font-size: 9px; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 3px; }
+.kpi-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi-bar { margin-top: 4px; height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; }
+.kpi-bar-fill { height: 100%; border-radius: 2px; transition: width .4s; }
+
+/* Tick meta */
+.tick-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10px; color: var(--muted); padding-top: 8px; border-top: 1px solid var(--border); }
+.tick-meta span b { color: var(--dim); font-weight: 600; }
+
+/* ── Bottom panels ──────────────────────────────────── */
+.bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 20px 12px; }
+@media (max-width: 900px) { .bottom-grid { grid-template-columns: 1fr; } }
+
+.panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.panel-header { background: var(--bg3); padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--dim); letter-spacing: .5px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.panel-body { padding: 10px 14px; }
+
+/* Transition log */
+.log-list { list-style: none; max-height: 200px; overflow-y: auto; }
+.log-list li { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 11px; display: flex; gap: 8px; }
+.log-list li:last-child { border-bottom: none; }
+.log-ts { color: var(--muted); flex-shrink: 0; }
+.log-sym { color: var(--accent); flex-shrink: 0; width: 120px; }
+.log-from { color: var(--muted); }
+.log-arrow { color: var(--border2); }
+.log-to { font-weight: 600; }
+.log-empty { color: var(--muted); font-size: 11px; text-align: center; padding: 20px 0; }
+
+/* Enrollment panel */
+.enroll-form { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.enroll-form input, .enroll-form select { background: var(--bg3); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-family: inherit; font-size: 12px; padding: 5px 8px; }
+.enroll-form input:focus, .enroll-form select:focus { outline: none; border-color: var(--accent); }
+.enrolled-list { list-style: none; max-height: 160px; overflow-y: auto; }
+.enrolled-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.enrolled-item:last-child { border-bottom: none; }
+.enrolled-name { flex: 1; color: var(--text); }
+.enrolled-inst { font-size: 10px; color: var(--muted); }
+.enrolled-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.enrolled-del:hover { color: var(--red); }
+.enrolled-empty { color: var(--muted); font-size: 11px; text-align: center; padding: 12px 0; }
+
+/* Market closed banner */
+.market-closed { background: #0f172a; border: 1px solid #1e3a5f; border-radius: 6px; padding: 8px 12px; color: var(--muted); font-size: 11px; text-align: center; margin-bottom: 8px; display: none; }
+.market-closed.show { display: block; }
+
+/* Hollow ratio widget */
+.hr-widget { display: flex; gap: 12px; align-items: center; }
+.hr-gauge { width: 80px; height: 80px; flex-shrink: 0; }
+.hr-details { flex: 1; }
+.hr-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+.hr-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px; }
+.hr-row span:first-child { color: var(--muted); }
+
+/* ── Footer ─────────────────────────────────────────── */
+footer { text-align: center; color: var(--muted); font-size: 10px; padding: 8px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="header-brand">⬡ HFT REGIME MONITOR</div>
+    <div class="header-sub">PARAM Capital · Zerodha WebSocket · Full Depth Mode</div>
+  </div>
+  <div class="header-spacer"></div>
+  <span id="clock"></span>
+  <a href="/dashboard" class="back-link">← OpenAlgo</a>
+</div>
+
+<!-- Control bar -->
+<div class="ctrl-bar">
+  <span class="ctrl-label">LIVE DATA:</span>
+  <span class="status-dot off" id="ws-dot"></span>
+  <span id="conn-status" style="color:var(--muted)">Not subscribed</span>
+  <button class="btn btn-primary" id="btn-subscribe" onclick="subscribeToFeed()">Subscribe to Live Feed</button>
+  <div class="header-spacer"></div>
+  <span class="ctrl-label" style="font-size:10px" id="poll-status"></span>
+</div>
+
+<!-- Waiting banner -->
+<div class="waiting-banner" id="waiting-banner">
+  <div class="spinner"></div>
+  <span id="waiting-text">Waiting for ticks…</span>
+</div>
+
+<!-- Market closed banner -->
+<div class="market-closed" id="market-closed-banner">
+  ⏸ Market session closed (09:15 – 15:30 IST). Showing last known state.
+</div>
+
+<!-- Instrument cards -->
+<div class="main-grid" id="inst-grid">
+  <!-- populated by JS -->
+</div>
+
+<!-- Bottom panels -->
+<div class="bottom-grid">
+  <!-- Transition Log -->
+  <div class="panel">
+    <div class="panel-header">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Regime Transition Log
+    </div>
+    <div class="panel-body">
+      <ul class="log-list" id="log-list">
+        <li class="log-empty" id="log-empty">No transitions yet</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Hollow Ratio + Enrollment -->
+  <div class="panel">
+    <div class="panel-header">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      Strategy Enrollment (Advisory)
+    </div>
+    <div class="panel-body">
+      <div class="enroll-form">
+        <input id="enroll-name" placeholder="Strategy name…" style="flex:1; min-width:120px">
+        <input id="enroll-desc" placeholder="Notes…" style="flex:1.5; min-width:120px">
+        <select id="enroll-inst">
+          <option value="paper">Paper</option>
+          <option value="live">Live</option>
+        </select>
+        <button class="btn btn-primary" onclick="addEnrolled()">Enroll</button>
+      </div>
+      <ul class="enrolled-list" id="enrolled-list">
+        <li class="enrolled-empty">No strategies enrolled</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<footer>PARAM Capital · HFT Regime Monitor · Live data via Zerodha WebSocket</footer>
+
+<script>
+// ─────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────
+const state = {
+  subscribed: false,
+  symbols: {},        // {NIFTY: {symbol, exchange}, BANKNIFTY: {...}}
+  kpis: {},           // sym_key -> kpi dict
+  tickCounts: {},     // sym_key -> count
+  prevRegimes: {},    // sym_key -> last regime string
+  prevLtp: {},        // sym_key -> last ltp for change %
+  sessionLtp: {},     // sym_key -> first ltp of session
+  lastTickTs: {},     // sym_key -> last tick timestamp
+  pollTimer: null,
+};
+
+const LOG_MAX = 50;
+let transitionLog = [];
+
+// ─────────────────────────────────────────────────────────────────
+// Clock
+// ─────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 3600000));
+  const fmt = ist.toISOString().replace('T', ' ').slice(0, 19) + ' IST';
+  document.getElementById('clock').textContent = fmt;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─────────────────────────────────────────────────────────────────
+// Market session check
+// ─────────────────────────────────────────────────────────────────
+function isMarketOpen() {
+  const now = new Date();
+  const ist = new Date(now.getTime() + 5.5 * 3600000);
+  const h = ist.getUTCHours(), m = ist.getUTCMinutes();
+  const totalMin = h * 60 + m;
+  return totalMin >= (9*60+15) && totalMin <= (15*60+30);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Subscribe
+// ─────────────────────────────────────────────────────────────────
+async function subscribeToFeed() {
+  const btn = document.getElementById('btn-subscribe');
+  btn.disabled = true;
+  btn.textContent = 'Subscribing…';
+  setConnStatus('connecting', 'Connecting…');
+
+  try {
+    const r = await fetch('/regime/api/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const data = await r.json();
+
+    if (data.status === 'success') {
+      state.subscribed = true;
+      state.symbols = data.symbols || {};
+      buildGrid();
+      setConnStatus('ok', 'Subscribed · polling KPIs');
+      btn.textContent = 'Re-subscribe';
+      btn.disabled = false;
+      startPolling();
+    } else {
+      setConnStatus('error', data.message || 'Subscribe failed');
+      btn.textContent = 'Retry';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    setConnStatus('error', 'Network error: ' + e.message);
+    btn.textContent = 'Retry';
+    btn.disabled = false;
+  }
+}
+
+function setConnStatus(level, msg) {
+  const dot = document.getElementById('ws-dot');
+  const lbl = document.getElementById('conn-status');
+  dot.className = 'status-dot ' + (level === 'ok' ? 'ok' : level === 'connecting' ? 'warn' : level === 'error' ? 'error' : 'off');
+  lbl.style.color = level === 'ok' ? 'var(--green)' : level === 'error' ? 'var(--red)' : 'var(--muted)';
+  lbl.textContent = msg;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Polling
+// ─────────────────────────────────────────────────────────────────
+function startPolling() {
+  if (state.pollTimer) clearInterval(state.pollTimer);
+  state.pollTimer = setInterval(fetchKpis, 2000);
+  fetchKpis();
+}
+
+async function fetchKpis() {
+  try {
+    const r = await fetch('/regime/api/kpis');
+    const data = await r.json();
+    if (data.status === 'success') {
+      state.kpis = data.kpis || {};
+      state.tickCounts = data.tick_counts || {};
+      renderAll();
+      const now = new Date().toLocaleTimeString('en-IN');
+      document.getElementById('poll-status').textContent = 'Last poll: ' + now;
+    }
+  } catch (e) {
+    setConnStatus('warn', 'Poll error · retrying');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Build instrument grid
+// ─────────────────────────────────────────────────────────────────
+function buildGrid() {
+  const grid = document.getElementById('inst-grid');
+  grid.innerHTML = '';
+
+  // If no symbols from server, show default NIFTY + BANKNIFTY placeholders
+  const instruments = Object.keys(state.symbols).length
+    ? state.symbols
+    : { NIFTY: { symbol: 'NIFTY__FUT', exchange: 'NFO' }, BANKNIFTY: { symbol: 'BANKNIFTY__FUT', exchange: 'NFO' } };
+
+  for (const [name, info] of Object.entries(instruments)) {
+    const symKey = `${info.exchange}:${info.symbol}`;
+    const div = document.createElement('div');
+    div.className = 'inst-card';
+    div.id = 'card-' + symKey.replace(/:/g, '_').replace(/\./g, '_');
+    div.innerHTML = buildCardHTML(name, info.symbol, info.exchange, symKey, null);
+    grid.appendChild(div);
+  }
+}
+
+function buildCardHTML(name, symbol, exchange, symKey, kpi) {
+  const regime = kpi ? kpi.regime : 'LOADING';
+  const regimeLabel = regime.replace(/_/g, ' ');
+  const ltp = kpi ? kpi.ltp : null;
+  const prevLtp = state.prevLtp[symKey];
+  const sessionLtp = state.sessionLtp[symKey];
+
+  let ltpStr = ltp != null ? ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—';
+  let chgStr = '', chgClass = '';
+  if (ltp != null && sessionLtp != null && sessionLtp > 0) {
+    const chgPct = (ltp - sessionLtp) / sessionLtp * 100;
+    chgStr = (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%';
+    chgClass = chgPct >= 0 ? 'up' : 'down';
+  }
+
+  const bid = kpi ? kpi.best_bid : 0;
+  const ask = kpi ? kpi.best_ask : 0;
+  const bidStr = bid > 0 ? bid.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—';
+  const askStr = ask > 0 ? ask.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—';
+
+  const sprdPct = kpi ? kpi.spread_pct : null;
+  const sprdStr = sprdPct != null ? sprdPct.toFixed(3) + '%' : '—';
+  const sprdColor = sprdPct != null ? (sprdPct > 0.06 ? 'var(--red)' : sprdPct < 0.03 ? 'var(--green)' : 'var(--yellow)') : 'var(--muted)';
+
+  const imb = kpi ? kpi.imbalance : null;
+  const imbPct = imb != null ? Math.round(imb * 100) : 0;
+
+  const tc = state.tickCounts[symKey] || 0;
+  const waiting = kpi == null && tc < 30;
+
+  return `
+    <div class="inst-header">
+      <span class="inst-name">${name} FUT</span>
+      <span class="regime-badge r-${regime}">${regimeLabel}</span>
+      <span class="inst-sym">${symbol}</span>
+    </div>
+    <div class="inst-body">
+      ${waiting ? `<div style="color:var(--yellow);font-size:11px;margin-bottom:8px">⏳ Waiting for ticks (${tc}/30 minimum)</div>` : ''}
+      <div class="ltp-row">
+        <span class="ltp-val">${ltpStr}</span>
+        ${chgStr ? `<span class="ltp-chg ${chgClass}">${chgStr}</span>` : ''}
+        <span class="spread-badge" style="background:var(--bg4);color:${sprdColor}">Sprd ${sprdStr}</span>
+      </div>
+      <div class="ba-row">
+        <span class="ba-bid">B ${bidStr}</span>
+        <span class="ba-sep">|</span>
+        <span class="ba-ask">A ${askStr}</span>
+        <div class="imb-bar-wrap">
+          <span style="color:var(--muted);font-size:9px">IMB</span>
+          <div class="imb-bar-outer">
+            <div class="imb-bar-inner" style="width:${imbPct}%;background:${imbPct > 40 ? 'var(--red)' : imbPct > 25 ? 'var(--yellow)' : 'var(--green)'}"></div>
+          </div>
+          <span style="color:var(--dim)">${imbPct}%</span>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        ${kpiCell('NDP', kpi?.ndp, '%', kpi?.ndp, 0, 100, v => v < 30 ? 'var(--green)' : v < 50 ? 'var(--yellow)' : 'var(--red)', true)}
+        ${kpiCell('CPI', kpi?.cpi, 'm', kpi?.cpi, 0, 45, v => v > 15 ? 'var(--green)' : v > 8 ? 'var(--yellow)' : 'var(--red)')}
+        ${kpiCell('VRT', kpi?.vrt, '', kpi?.vrt, 0, 100, v => v > 70 ? 'var(--green)' : v > 40 ? 'var(--yellow)' : 'var(--red)')}
+        ${kpiCell('HR', kpi?.hr, 'x', kpi?.hr ? kpi.hr / 4.5 * 100 : null, 0, 100, v => v > 50 ? 'var(--green)' : v > 25 ? 'var(--yellow)' : 'var(--red)')}
+        ${kpiCell('RSI', kpi?.rsi_mkt, '/m', kpi?.rsi_mkt ? (1 - kpi.rsi_mkt / 0.25) * 100 : null, 0, 100, v => v > 60 ? 'var(--green)' : v > 30 ? 'var(--yellow)' : 'var(--red)')}
+      </div>
+      <div class="tick-meta">
+        <span><b>Ticks:</b> ${tc.toLocaleString()}</span>
+        ${kpi ? `<span><b>Rate:</b> ${kpi.tick_rate}/s</span>` : ''}
+        ${kpi ? `<span><b>LTQ:</b> ${kpi.ltq}</span>` : ''}
+        ${kpi ? `<span><b>Depth:</b> ${kpi.has_depth ? '✓ Full' : '✗ Basic'}</span>` : ''}
+        ${kpi ? `<span><b>Restoring:</b> ${kpi.calm_restoring}</span>` : ''}
+        ${kpi ? `<span><b>Expanding:</b> ${kpi.noise_expanding}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function kpiCell(label, val, unit, barVal, min, max, colorFn, inverse) {
+  const hasVal = val != null;
+  const display = hasVal ? (label === 'HR' ? val.toFixed(2) : label === 'RSI' ? val.toFixed(3) : val.toFixed(1)) : '—';
+  const bPct = hasVal && barVal != null ? Math.min(100, Math.max(0, (barVal - min) / (max - min) * 100)) : 0;
+  const color = hasVal ? colorFn(val) : 'var(--muted)';
+  return `<div class="kpi-cell">
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-value" style="color:${color}">${display}<span style="font-size:9px;color:var(--muted)">${unit}</span></div>
+    <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${bPct}%;background:${color}"></div></div>
+  </div>`;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Render all instruments
+// ─────────────────────────────────────────────────────────────────
+function renderAll() {
+  if (!Object.keys(state.symbols).length) return;
+
+  let anyWaiting = false;
+  const now = Date.now() / 1000;
+
+  for (const [name, info] of Object.entries(state.symbols)) {
+    const symKey = `${info.exchange}:${info.symbol}`;
+    const kpi = state.kpis[symKey] || null;
+    const tc = state.tickCounts[symKey] || 0;
+
+    // Track session first LTP
+    if (kpi && !state.sessionLtp[symKey]) {
+      state.sessionLtp[symKey] = kpi.ltp;
+    }
+
+    // Detect regime transitions
+    if (kpi && state.prevRegimes[symKey] && state.prevRegimes[symKey] !== kpi.regime) {
+      addTransition(name, info.symbol, state.prevRegimes[symKey], kpi.regime);
+    }
+    if (kpi) state.prevRegimes[symKey] = kpi.regime;
+
+    // Stale check: no tick for > 60s
+    const lastTs = kpi ? kpi.last_tick_ts : null;
+    const stale = lastTs && (now - lastTs) > 60;
+
+    const cardId = 'card-' + symKey.replace(/:/g, '_').replace(/\./g, '_');
+    const card = document.getElementById(cardId);
+    if (card) {
+      card.innerHTML = buildCardHTML(name, info.symbol, info.exchange, symKey, kpi);
+      if (stale) card.style.opacity = '0.6';
+      else card.style.opacity = '';
+    }
+
+    if (kpi == null && tc < 30) anyWaiting = true;
+  }
+
+  // Waiting banner
+  const wb = document.getElementById('waiting-banner');
+  if (anyWaiting && state.subscribed) {
+    wb.classList.add('show');
+    const minTc = Math.min(...Object.values(state.tickCounts).filter(v => v > 0), 0);
+    document.getElementById('waiting-text').textContent = `Accumulating ticks… (${minTc}/30 minimum needed for KPI computation)`;
+  } else {
+    wb.classList.remove('show');
+  }
+
+  // Market closed banner
+  const mcb = document.getElementById('market-closed-banner');
+  if (!isMarketOpen() && Object.keys(state.kpis).length > 0) {
+    mcb.classList.add('show');
+  } else {
+    mcb.classList.remove('show');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Transition log
+// ─────────────────────────────────────────────────────────────────
+function addTransition(name, symbol, from, to) {
+  const now = new Date();
+  const ist = new Date(now.getTime() + 5.5 * 3600000);
+  const ts = ist.toISOString().slice(11, 19);
+  transitionLog.unshift({ ts, name, symbol, from, to });
+  if (transitionLog.length > LOG_MAX) transitionLog.pop();
+  renderLog();
+}
+
+function renderLog() {
+  const list = document.getElementById('log-list');
+  if (!transitionLog.length) {
+    list.innerHTML = '<li class="log-empty">No transitions yet</li>';
+    return;
+  }
+  list.innerHTML = transitionLog.map(e => {
+    const toColor = {
+      CALM_STRUCTURAL: 'var(--calm-s)', CALM_TRANSIENT: 'var(--calm-t)',
+      VOLATILE_ACTIVE: 'var(--vol)', NOISE: 'var(--red)',
+      QUIET_RISK: 'var(--qrisk)', MIXED: 'var(--mixed)',
+    }[e.to] || 'var(--text)';
+    return `<li>
+      <span class="log-ts">${e.ts}</span>
+      <span class="log-sym">${e.name} FUT</span>
+      <span class="log-from">${e.from.replace(/_/g,' ')}</span>
+      <span class="log-arrow"> → </span>
+      <span class="log-to" style="color:${toColor}">${e.to.replace(/_/g,' ')}</span>
+    </li>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Enrollment
+// ─────────────────────────────────────────────────────────────────
+async function loadEnrolled() {
+  try {
+    const r = await fetch('/regime/api/enrolled');
+    const data = await r.json();
+    renderEnrolled(data.data || []);
+  } catch (e) {}
+}
+
+function renderEnrolled(list) {
+  const el = document.getElementById('enrolled-list');
+  if (!list.length) {
+    el.innerHTML = '<li class="enrolled-empty">No strategies enrolled — advisory only</li>';
+    return;
+  }
+  el.innerHTML = list.map(e => `
+    <li class="enrolled-item">
+      <span class="enrolled-name">${e.name}</span>
+      <span class="enrolled-inst">${e.instance}</span>
+      <span style="color:var(--muted);font-size:10px">${(e.desc||'').slice(0,40)}</span>
+      <button class="enrolled-del" onclick="delEnrolled(${e.id})" title="Remove">×</button>
+    </li>
+  `).join('');
+}
+
+async function addEnrolled() {
+  const name = document.getElementById('enroll-name').value.trim();
+  if (!name) return;
+  const body = {
+    name,
+    desc: document.getElementById('enroll-desc').value.trim(),
+    instance: document.getElementById('enroll-inst').value,
+  };
+  try {
+    await fetch('/regime/api/enrolled', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    document.getElementById('enroll-name').value = '';
+    document.getElementById('enroll-desc').value = '';
+    loadEnrolled();
+  } catch (e) {}
+}
+
+async function delEnrolled(id) {
+  try {
+    await fetch('/regime/api/enrolled/' + id, { method: 'DELETE' });
+    loadEnrolled();
+  } catch (e) {}
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────
+async function init() {
+  loadEnrolled();
+  // Check if already subscribed (server survived restart)
+  try {
+    const r = await fetch('/regime/api/status');
+    const data = await r.json();
+    if (data.has_live_data || (data.tick_counts && Object.values(data.tick_counts).some(v => v > 0))) {
+      state.subscribed = true;
+      state.symbols = data.futures || {};
+      buildGrid();
+      setConnStatus('ok', 'Resumed · polling KPIs');
+      document.getElementById('btn-subscribe').textContent = 'Re-subscribe';
+      startPolling();
+    }
+  } catch (e) {}
+}
+
+init();
+</script>
+</body>
+</html>

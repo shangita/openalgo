@@ -154,6 +154,7 @@ from blueprints.orders import orders_bp
 from blueprints.platforms import platforms_bp
 from blueprints.playground import playground_bp  # Import the API playground blueprint
 from blueprints.pnltracker import pnltracker_bp  # Import the pnl tracker blueprint
+from blueprints.regime import regime_bp  # Import the Regime Monitor blueprint
 from blueprints.python_strategy import python_strategy_bp, initialize_with_app_context as init_python_strategy  # Import the python strategy blueprint
 from blueprints.react_app import (  # Import React frontend blueprint
     is_react_frontend_available,
@@ -356,6 +357,7 @@ def create_app():
     app.register_blueprint(master_contract_status_bp)
     app.register_blueprint(websocket_bp)  # Register WebSocket example blueprint
     app.register_blueprint(pnltracker_bp)  # Register PnL tracker blueprint
+    app.register_blueprint(regime_bp)  # Register Regime Monitor blueprint
     app.register_blueprint(python_strategy_bp)  # Register Python strategy blueprint
     app.register_blueprint(telegram_bp)  # Register Telegram blueprint
     app.register_blueprint(security_bp)  # Register Security blueprint

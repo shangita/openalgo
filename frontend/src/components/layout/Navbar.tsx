@@ -258,7 +258,7 @@ export function Navbar() {
               {filteredProfileMenuItems.map((item) => (
                 <DropdownMenuItem
                   key={item.href}
-                  onSelect={() => navigate(item.href)}
+                  onSelect={() => item.external ? (window.location.href = item.href) : navigate(item.href)}
                   className="cursor-pointer"
                 >
                   <item.icon className="h-4 w-4 mr-2" />
