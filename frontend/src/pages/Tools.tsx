@@ -4,6 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 const tools = [
   {
+    title: 'Delta Neutral',
+    description: 'Live portfolio Greeks (Δ Γ Θ V), payoff chart at expiry, breakevens, and per-leg breakdown for algo-managed delta neutral strategies',
+    href: '/deltaneutral',
+    color: 'bg-purple-600',
+  },
+  {
     title: 'Option Chain',
     description: 'Real-time option chain with live Greeks, OI data, and quick order placement',
     href: '/optionchain',

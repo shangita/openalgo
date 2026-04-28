@@ -233,6 +233,11 @@ def react_ivsmile():
     return serve_react_app()
 
 
+# Delta Neutral Strategy Monitor
+@react_bp.route("/deltaneutral", strict_slashes=False)
+def react_delta_neutral():
+    return serve_react_app()
+
 # OI Profile - Open Interest Profile with futures candles
 @react_bp.route("/oiprofile")
 def react_oiprofile():
