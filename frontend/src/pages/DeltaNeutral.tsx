@@ -1,3 +1,4 @@
+// v2
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ChevronsUpDown, RefreshCw, Activity, TrendingDown, TrendingUp, Zap } from 'lucide-react'
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
@@ -381,10 +382,10 @@ export default function DeltaNeutral() {
             {/* Expiry */}
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground font-medium">Expiry</label>
-              <Select value={expiry} onValueChange={setExpiry}>
+              <Select value={expiry} onValueChange={v => setExpiry(v === "__all__" ? "" : v)}>
                 <SelectTrigger className="w-36"><SelectValue placeholder="Any expiry" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Any expiry</SelectItem>
+                  <SelectItem value="__all__">Any expiry</SelectItem>
                   {expiries.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -577,7 +578,7 @@ export default function DeltaNeutral() {
         <Card>
           <CardContent className="py-16 text-center text-muted-foreground">
             <Activity className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            <p className="text-base font-medium">Delta Neutral Monitor</p>
+            <p className="text-base font-medium">Delta Neutral Monitor v2</p>
             <p className="text-sm mt-1 opacity-70">
               Select exchange + underlying above, then click <strong>Load</strong>
             </p>
