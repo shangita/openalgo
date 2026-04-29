@@ -317,17 +317,17 @@ class DeltaNeutralStrategy:
         try:
             resp = self.client.quotes(symbol=symbol, exchange=exchange)
             if resp.get("status") == "success":
-                return float(resp.get("ltp", 0) or 0)
+                return float(resp.get("data", {}).get("ltp", 0) or 0)
         except Exception as e:
             logger.debug(f"Quote failed {symbol}: {e}")
         return 0.0
 
     def _spot(self) -> float:
         # For indices, quote from NSE/BSE; for stocks from NSE
-        idx_symbols = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX"}
+        idx_nse = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
         underlying = self.cfg["underlying"]
-        if underlying in idx_symbols:
-            exch = "NSE" if underlying != "SENSEX" else "BSE"
+        if underlying in idx_nse:
+            exch = "NSE_INDEX"
         else:
             exch = "NSE"
         return self._quote(underlying, exch)
