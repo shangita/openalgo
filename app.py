@@ -156,6 +156,7 @@ from blueprints.platforms import platforms_bp
 from blueprints.playground import playground_bp  # Import the API playground blueprint
 from blueprints.pnltracker import pnltracker_bp  # Import the pnl tracker blueprint
 from blueprints.regime import regime_bp  # Import the Regime Monitor blueprint
+from blueprints.scanner import scanner_bp  # Import the Dual-Setup Scanner blueprint
 from blueprints.python_strategy import python_strategy_bp, initialize_with_app_context as init_python_strategy  # Import the python strategy blueprint
 from blueprints.react_app import (  # Import React frontend blueprint
     is_react_frontend_available,
@@ -178,6 +179,7 @@ from cors import cors  # Import the CORS instance
 from csp import apply_csp_middleware  # Import the CSP middleware
 from database.action_center_db import init_db as ensure_action_center_tables_exists
 from database.analyzer_db import init_db as ensure_analyzer_tables_exists
+from services.scanner.store import init_db as scanner_db_init
 from database.apilog_db import init_db as ensure_api_log_tables_exists
 from database.auth_db import init_db as ensure_auth_tables_exists
 from database.chartink_db import init_db as ensure_chartink_tables_exists
@@ -328,6 +330,7 @@ def create_app():
 
     # Exempt API endpoints from CSRF protection (they use API key authentication)
     csrf.exempt(api_v1_bp)
+    csrf.exempt(scanner_bp)  # Scanner POST routes use session auth, not CSRF tokens
 
     # Initialize security middleware before traffic logging
     init_security_middleware(app)
@@ -359,6 +362,7 @@ def create_app():
     app.register_blueprint(websocket_bp)  # Register WebSocket example blueprint
     app.register_blueprint(pnltracker_bp)  # Register PnL tracker blueprint
     app.register_blueprint(regime_bp)  # Register Regime Monitor blueprint
+    app.register_blueprint(scanner_bp)  # Register Dual-Setup Scanner blueprint
     app.register_blueprint(python_strategy_bp)  # Register Python strategy blueprint
     app.register_blueprint(telegram_bp)  # Register Telegram blueprint
     app.register_blueprint(security_bp)  # Register Security blueprint
@@ -606,6 +610,7 @@ def setup_environment(app):
                 ("Historify DB", ensure_historify_tables_exists),
                 ("Flow DB", ensure_flow_tables_exists),
                 ("Leverage DB", ensure_leverage_tables_exists),
+                ("Scanner DB", scanner_db_init),
             ]
 
             db_init_start = time.time()

@@ -1,3 +1,4 @@
+import re
 import importlib
 import time
 import traceback
@@ -75,6 +76,74 @@ def import_broker_module(broker_name: str) -> Any | None:
         return None
 
 
+
+# ─── yfinance fallback symbol map ────────────────────────────────────────────
+_YF_BASE_MAP = {
+    'NIFTY': '^NSEI', 'BANKNIFTY': '^NSEBANK', 'FINNIFTY': 'NIFTY_FIN_SERVICE.NS',
+    'HDFCBANK': 'HDFCBANK.NS', 'RELIANCE': 'RELIANCE.NS', 'TCS': 'TCS.NS',
+    'INFY': 'INFY.NS', 'SBIN': 'SBIN.NS', 'ICICIBANK': 'ICICIBANK.NS',
+    'SILVERM': 'SI=F', 'SILVER': 'SI=F', 'GOLD': 'GC=F', 'GOLDM': 'GC=F',
+    'CRUDEOIL': 'CL=F', 'NATURALGAS': 'NG=F', 'COPPER': 'HG=F',
+}
+_YF_INTERVAL_MAP = {'1m':'1m','3m':'5m','5m':'5m','10m':'15m','15m':'15m','30m':'30m','1h':'1h','1d':'1d','D':'1d'}
+
+def _extract_base_symbol(symbol: str) -> str:
+    """Strip expiry from futures symbol e.g. HDFCBANK28APR26FUT -> HDFCBANK"""
+    return re.sub(r'[0-9]{2}[A-Z]{3}[0-9]{2}FUT$', '', symbol).rstrip('0123456789')
+
+def _get_yf_symbol(symbol: str, exchange: str) -> str | None:
+    """Map OpenAlgo symbol/exchange to yfinance ticker."""
+    base = _extract_base_symbol(symbol.upper())
+    if base in _YF_BASE_MAP:
+        return _YF_BASE_MAP[base]
+    if exchange in ('NSE', 'NFO', 'BSE', 'BFO'):
+        return f"{base}.NS"
+    return None
+
+def get_history_from_yfinance(
+    symbol: str, exchange: str, interval: str, start_date: str, end_date: str
+) -> tuple[bool, dict, int]:
+    """Fallback to yfinance when broker API returns permission error."""
+    try:
+        import yfinance as yf
+        from datetime import datetime as _dt, timedelta as _td
+        import pytz as _pytz
+        yf_sym = _get_yf_symbol(symbol, exchange)
+        if not yf_sym:
+            logger.warning("No yfinance mapping for %s/%s", symbol, exchange)
+            return False, {"status": "error", "message": f"No yfinance mapping for {symbol}/{exchange}"}, 500
+        yf_interval = _YF_INTERVAL_MAP.get(interval, interval)
+        # Use TZ-aware dates to ensure today IST data is included
+        ist = _pytz.timezone("Asia/Kolkata")
+        try:
+            start_dt = ist.localize(_dt.strptime(start_date, "%Y-%m-%d"))
+            end_dt = ist.localize(_dt.strptime(end_date, "%Y-%m-%d")) + _td(days=1)
+        except Exception:
+            start_dt = _dt.now(ist) - _td(days=7)
+            end_dt = _dt.now(ist) + _td(days=1)
+        ticker = yf.Ticker(yf_sym)
+        df = ticker.history(start=start_dt, end=end_dt, interval=yf_interval, auto_adjust=True)
+        if df.empty:
+            # Try period fallback
+            days = max(5, (_dt.now(ist).date() - start_dt.date()).days + 1)
+            period = f"{min(days, 7)}d"
+            df = ticker.history(period=period, interval=yf_interval, auto_adjust=True)
+        if df.empty:
+            logger.warning("yfinance returned empty for %s", yf_sym)
+            return False, {"status": "error", "message": f"No data from yfinance for {yf_sym}"}, 500
+        df.columns = [c.lower() for c in df.columns]
+        if hasattr(df.index, "tz") and df.index.tz is not None:
+            df["timestamp"] = df.index.tz_convert("UTC").astype("int64") // 10**9
+        else:
+            df["timestamp"] = df.index.tz_localize("UTC").astype("int64") // 10**9
+        df["oi"] = 0
+        df = df[["timestamp","open","high","low","close","volume","oi"]].reset_index(drop=True)
+        logger.info("yfinance fallback OK: %s -> %s (%d rows)", symbol, yf_sym, len(df))
+        return True, {"status": "success", "data": df.to_dict(orient="records")}, 200
+    except Exception as e:
+        logger.error("yfinance fallback failed for %s: %s", symbol, e)
+        return False, {"status": "error", "message": str(e)}, 500
+
 def get_history_with_auth(
     auth_token: str,
     feed_token: str | None,
@@ -138,6 +207,10 @@ def get_history_with_auth(
 
         return True, {"status": "success", "data": df.to_dict(orient="records")}, 200
     except Exception as e:
+        err_msg = str(e).lower()
+        if "permission" in err_msg or "insufficient permission" in err_msg or "incorrect" in err_msg or "access_token" in err_msg or "invalid token" in err_msg:
+            logger.warning("Broker permission denied, using yfinance fallback for %s/%s", symbol, exchange)
+            return get_history_from_yfinance(symbol, exchange, interval, start_date, end_date)
         logger.error(f"Error in broker_module.get_history: {e}")
         traceback.print_exc()
         return False, {"status": "error", "message": str(e)}, 500
