@@ -71,7 +71,6 @@ export const profileMenuItems: NavItem[] = [
   { href: '/pnl-tracker', label: 'PnL Tracker', icon: BarChart3 },
   { href: '/regime', label: 'Regime Monitor', icon: Gauge, external: true },
   { href: '/scanner', label: 'Dual-Setup Scanner', icon: BarChart3 },
-  { href: '/backtest', label: 'Backtest', icon: FlaskConical },
   { href: '/chat', label: 'AI Chat', icon: Bot, external: true },
   { href: '/historify', label: 'Historify', icon: Database },
   { href: '/search/token', label: 'Search', icon: Search },

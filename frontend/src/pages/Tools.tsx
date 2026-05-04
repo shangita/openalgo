@@ -28,6 +28,12 @@ const tools: Tool[] = [
     href: '/scanner',
     color: 'bg-green-600',
   },
+  {
+    title: 'Backtest',
+    description: 'Strategy backtester with walk-forward analysis, Monte Carlo simulation, parameter sensitivity, and full 10-criterion scorecard',
+    href: '/backtest',
+    color: 'bg-indigo-600',
+  },
 ]
 
 function ToolCard({ tool }: { tool: Tool }) {
