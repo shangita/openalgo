@@ -455,7 +455,7 @@ def main():
         today_str = now.strftime("%Y-%m-%d")
         with _lock:
             stale = {k for k in _alerted_today if not k.startswith(today_str)}
-            _alerted_today -= stale
+            _alerted_today.difference_update(stale)
             if stale:
                 _candidates.clear()  # also clear stale candidates overnight
 
