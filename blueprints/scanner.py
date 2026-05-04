@@ -11,7 +11,7 @@ from flask_cors import cross_origin
 from database.auth_db import get_api_key_for_tradingview, get_auth_token
 from services.scanner import store, notifier
 from services.scanner.paper_engine import (
-    get_positions, manual_close, open_position, start_engine,
+    get_positions, is_engine_running, manual_close, open_position, start_engine,
 )
 from services.scanner.scheduler import get_scheduler
 from utils.logging import get_logger
@@ -267,6 +267,15 @@ def scanner_paper_start():
 @cross_origin()
 @check_session_validity
 def scanner_paper_status():
+    # Auto-restart engine after service restart if open positions exist and engine is dead
+    if not is_engine_running():
+        login_username = session.get("user")
+        if login_username:
+            from database.auth_db import get_api_key_for_tradingview
+            api_key = get_api_key_for_tradingview(login_username)
+            if api_key and store.get_open_positions():
+                start_engine(api_key)
+
     positions = get_positions()
 
     open_pos = [p for p in positions if p["status"] in ("OPEN", "DATA_STALLED")]

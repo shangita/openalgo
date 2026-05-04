@@ -249,7 +249,7 @@ def _engine_loop(api_key: str, trail_mult: float) -> None:
                 except Exception as exc:
                     logger.error("Paper engine error for %s: %s", pos.symbol, exc)
 
-        _stop_event.wait(timeout=60)
+        _stop_event.wait(timeout=15)
 
     logger.info("Paper engine stopped")
 
@@ -295,22 +295,37 @@ def stop_engine() -> None:
     _stop_event.set()
 
 
+def is_engine_running() -> bool:
+    return _engine_thread is not None and _engine_thread.is_alive()
+
+
 def get_positions() -> list[dict]:
     rows = store.get_positions_today()
     with _positions_lock:
         mem = dict(_positions)
     for row in rows:
         pid = row["position_id"]
+        cp = None
+
         if pid in mem:
             pos = mem[pid]
-            cp = pos.current_price
-            if cp is not None:
-                row["current_price"] = round(cp, 2)
+            live_cp = pos.current_price
+            if live_cp is not None:
+                row["current_price"] = round(live_cp, 2)
                 row["trailing_sl"] = round(pos.trailing_sl, 2)
-                if pos.direction == Direction.LONG:
-                    row["pnl"] = round((cp - pos.entry_price) * pos.qty, 2)
-                else:
-                    row["pnl"] = round((pos.entry_price - cp) * pos.qty, 2)
+                cp = live_cp
+        elif row["status"] in ("OPEN", "DATA_STALLED"):
+            # Engine not running or not yet in memory — use DB current_price as fallback
+            cp = row.get("current_price")
+
+        # Recompute unrealised PnL for open positions only
+        if row["status"] in ("OPEN", "DATA_STALLED") and cp is not None:
+            entry = row["entry_price"]
+            qty = row["qty"]
+            if row["direction"] == "LONG":
+                row["pnl"] = round((cp - entry) * qty, 2)
+            else:
+                row["pnl"] = round((entry - cp) * qty, 2)
     return rows
 
 
