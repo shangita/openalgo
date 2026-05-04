@@ -47,7 +47,6 @@ NIFTY50: list[tuple[str, str]] = [
     ("SBILIFE", "NSE"),
     ("SHRIRAMFIN", "NSE"),
     ("TATACONSUM", "NSE"),
-    ("TMCV", "NSE"),
     ("TRENT", "NSE"),
     ("BPCL", "NSE"),
     ("CIPLA", "NSE"),
