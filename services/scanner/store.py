@@ -159,18 +159,28 @@ def save_alert(dedupe_key: str, signal_id: str) -> None:
 def save_position(pos) -> None:
     session = _Session()
     try:
-        row = PositionRow(
-            position_id=pos.position_id, signal_id=pos.signal_id,
-            symbol=pos.symbol, exchange=pos.exchange,
-            setup_id=pos.setup_id.value, direction=pos.direction.value,
-            entry_price=pos.entry_price, qty=pos.qty,
-            target=pos.target, stop_loss=pos.stop_loss, trailing_sl=pos.trailing_sl,
-            status=pos.status.value, opened_at=pos.opened_at,
-            closed_at=pos.closed_at, exit_price=pos.exit_price,
-            exit_reason=pos.exit_reason.value if pos.exit_reason else None,
-            pnl=pos.pnl, current_price=pos.current_price,
-        )
-        session.merge(row)
+        row = session.query(PositionRow).filter_by(position_id=pos.position_id).first()
+        if row is None:
+            row = PositionRow()
+            session.add(row)
+        row.position_id = pos.position_id
+        row.signal_id = pos.signal_id
+        row.symbol = pos.symbol
+        row.exchange = pos.exchange
+        row.setup_id = pos.setup_id.value
+        row.direction = pos.direction.value
+        row.entry_price = pos.entry_price
+        row.qty = pos.qty
+        row.target = pos.target
+        row.stop_loss = pos.stop_loss
+        row.trailing_sl = pos.trailing_sl
+        row.status = pos.status.value
+        row.opened_at = pos.opened_at
+        row.closed_at = pos.closed_at
+        row.exit_price = pos.exit_price
+        row.exit_reason = pos.exit_reason.value if pos.exit_reason else None
+        row.pnl = pos.pnl
+        row.current_price = pos.current_price
         session.commit()
     except Exception as exc:
         session.rollback()
