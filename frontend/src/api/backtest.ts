@@ -1,10 +1,22 @@
 import axios from 'axios'
 
-export interface BtStrategy {
+export interface BtDataset {
+  key: string
+  symbol: string
+  exchange: string
+  interval: string
+  record_count: number
+  first_date: string
+  last_date: string
+}
+
+export interface BtPythonStrategy {
   id: string
-  label: string
-  description: string
-  default_params: Record<string, number>
+  name: string
+  file: string
+  bt_type: string
+  bt_params: Record<string, number>
+  key_params: Record<string, number>
 }
 
 export interface BtScorecard {
@@ -39,10 +51,7 @@ export interface BtScorecard {
   }
 }
 
-export interface BtEquityPt {
-  t: number
-  v: number
-}
+export interface BtEquityPt { t: number; v: number }
 
 export interface WfaWindow {
   window: string
@@ -72,19 +81,16 @@ export interface BtResult {
   symbol: string
   exchange: string
   interval: string
-  strategy: string
+  strategy_name: string
+  bt_type: string
+  bt_params: Record<string, number>
 }
 
 export interface BtJob {
   job_id: string
   status: 'queued' | 'running' | 'done' | 'error'
-  symbol: string
-  exchange: string
-  interval: string
-  start_date: string
-  end_date: string
-  strategy: string
-  params: Record<string, number>
+  dataset_key: string
+  strategy_id: string
   result: BtResult | null
   error: string | null
   submitted_at: string
@@ -106,24 +112,11 @@ const wrap = async <T>(p: Promise<{ data: { ok: boolean; data: T; error: string 
 }
 
 export const btApi = {
-  strategies: () => wrap<BtStrategy[]>(api.get('/backtest/api/strategies')),
-
-  run: (payload: {
-    symbol: string
-    exchange: string
-    interval: string
-    start_date: string
-    end_date: string
-    strategy: string
-    params: Record<string, number>
-  }) => wrap<{ job_id: string }>(api.post('/backtest/api/run', payload)),
-
-  status: (jobId: string) => wrap<BtJob>(api.get(`/backtest/api/status/${jobId}`)),
-
-  logs: (since: number) =>
-    wrap<{ logs: BtLogEntry[]; seq: number }>(
-      api.get('/backtest/logs', { params: { since } })
-    ),
-
+  datasets:         () => wrap<BtDataset[]>(api.get('/backtest/api/datasets')),
+  pythonStrategies: () => wrap<BtPythonStrategy[]>(api.get('/backtest/api/python-strategies')),
+  run: (payload: { dataset_key: string; strategy_id: string }) =>
+    wrap<{ job_id: string }>(api.post('/backtest/api/run', payload)),
+  status:    (jobId: string) => wrap<BtJob>(api.get(`/backtest/api/status/${jobId}`)),
+  logs:      (since: number) => wrap<{ logs: BtLogEntry[]; seq: number }>(api.get('/backtest/logs', { params: { since } })),
   clearLogs: () => wrap<{ message: string }>(api.post('/backtest/logs/clear')),
 }

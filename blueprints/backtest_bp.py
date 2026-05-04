@@ -24,21 +24,20 @@ def _err(msg: str, code: int = 400):
     return jsonify({"ok": False, "error": msg, "data": None}), code
 
 
-@backtest_bp.route("/backtest/api/strategies", methods=["GET"])
+@backtest_bp.route("/backtest/api/datasets", methods=["GET"])
 @cross_origin()
 @check_session_validity
-def backtest_strategies():
-    from services.backtest_strategies import STRATEGIES
-    data = [
-        {
-            "id": k,
-            "label": v["label"],
-            "description": v["description"],
-            "default_params": v["default_params"],
-        }
-        for k, v in STRATEGIES.items()
-    ]
-    return _ok(data)
+def backtest_datasets():
+    from services.backtest_runner import list_datasets
+    return _ok(list_datasets())
+
+
+@backtest_bp.route("/backtest/api/python-strategies", methods=["GET"])
+@cross_origin()
+@check_session_validity
+def backtest_python_strategies():
+    from services.backtest_runner import list_python_strategies
+    return _ok(list_python_strategies())
 
 
 @backtest_bp.route("/backtest/api/run", methods=["POST"])
@@ -46,25 +45,16 @@ def backtest_strategies():
 @check_session_validity
 def backtest_run():
     body = request.get_json(silent=True) or {}
-    symbol      = body.get("symbol", "").strip().upper()
-    exchange    = body.get("exchange", "NSE").strip().upper()
-    interval    = body.get("interval", "D").strip()
-    start_date  = body.get("start_date", "")
-    end_date    = body.get("end_date", "")
-    strategy_id = body.get("strategy", "ema_pullback")
-    params      = body.get("params", {})
+    dataset_key  = body.get("dataset_key", "").strip()
+    strategy_id  = body.get("strategy_id", "").strip()
 
-    if not symbol:
-        return _err("symbol required")
-    if not start_date or not end_date:
-        return _err("start_date and end_date required")
+    if not dataset_key:
+        return _err("dataset_key required")
+    if not strategy_id:
+        return _err("strategy_id required")
 
     from services.backtest_runner import submit_job
-    try:
-        job_id = submit_job(symbol, exchange, interval, start_date, end_date, strategy_id, params)
-    except ValueError as exc:
-        return _err(str(exc))
-
+    job_id = submit_job(dataset_key, strategy_id)
     return _ok({"job_id": job_id})
 
 
@@ -85,8 +75,7 @@ def backtest_status(job_id: str):
 def backtest_get_logs():
     from services.backtest_log_buffer import current_seq, get_logs
     since = int(request.args.get("since", 0))
-    logs = get_logs(since)
-    return _ok({"logs": logs, "seq": current_seq()})
+    return _ok({"logs": get_logs(since), "seq": current_seq()})
 
 
 @backtest_bp.route("/backtest/logs/clear", methods=["POST"])
