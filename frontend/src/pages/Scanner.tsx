@@ -21,6 +21,13 @@ const POLL_MS = 5000
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+// Extract the server-side error message from an axios rejection
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function serverErr(err: unknown, fallback = 'Request failed'): string {
+  const e = err as any
+  return e?.response?.data?.error || e?.response?.data?.message || e?.message || fallback
+}
+
 function fmt2(v: number | null | undefined) {
   return v == null ? '—' : v.toFixed(2)
 }
@@ -402,8 +409,8 @@ export default function Scanner() {
       } else {
         showToast.error(res.error || 'Scan failed')
       }
-    } catch {
-      showToast.error('Request failed — check your session')
+    } catch (err) {
+      showToast.error(serverErr(err, 'Scan failed — check broker login'))
     } finally {
       setActionLoading(null)
     }
@@ -420,8 +427,8 @@ export default function Scanner() {
       } else {
         showToast.error(res.error || 'Action failed')
       }
-    } catch {
-      showToast.error('Request failed — check your session')
+    } catch (err) {
+      showToast.error(serverErr(err))
     } finally {
       setActionLoading(null)
     }
@@ -439,8 +446,8 @@ export default function Scanner() {
       } else {
         showToast.error(res.error || 'Failed to open positions')
       }
-    } catch {
-      showToast.error('Request failed')
+    } catch (err) {
+      showToast.error(serverErr(err))
     } finally {
       setActionLoading(null)
     }
@@ -451,7 +458,7 @@ export default function Scanner() {
       const res = await scannerApi.closePaperPosition(positionId)
       if (res.ok) { showToast.success('Position closed'); fetchAll(true) }
       else showToast.error(res.error || 'Failed to close')
-    } catch { showToast.error('Request failed') }
+    } catch (err) { showToast.error(serverErr(err)) }
   }
 
   const handleTelegramTest = async () => {
@@ -460,7 +467,7 @@ export default function Scanner() {
       const res = await scannerApi.testTelegram()
       if (res.ok) showToast.success('Telegram test message sent')
       else showToast.error(res.error || 'Failed — check env vars')
-    } catch { showToast.error('Request failed') }
+    } catch (err) { showToast.error(serverErr(err)) }
     finally { setActionLoading(null) }
   }
 
