@@ -157,6 +157,18 @@ Real-time notifications and command execution:
 
 [Traffic & Latency Monitor Documentation](https://docs.openalgo.in/new-features/traffic-latency-monitor)
 
+### Strategy Backtester
+Institutional-grade backtesting engine powered by VectorBT and the PARAM Capital validation framework:
+- **Historify integration**: pick any symbol/exchange/interval dataset directly from the local DuckDB catalog — no manual date entry
+- **Python strategy library**: select from hosted Python strategies; parameters are read from the strategy file automatically
+- **5-check compatibility panel**: instrument-name match, WFA window size, OOS bar count, indicator warmup, trade count estimate — shown before you run
+- **10-criterion scorecard**: OOS/IS Sharpe ratio, trade count ≥ 200, profit factor, Calmar, WFA profitable windows, param sensitivity σ/μ, Monte Carlo ruin probability, t-statistic, profitable regimes, Sharpe at 2× slippage — verdict is PASS (≥ 8/10) or FAIL
+- **Walk-forward analysis**: 8-split rolling WFA with IS grid-search on SL/TP multipliers, OOS out-of-sample validation
+- **Monte Carlo simulation**: 3 000 equity-curve resamplings, ruin probability at 50 % drawdown threshold
+- **Parameter sensitivity**: σ/μ Sharpe across ±20 % param perturbations
+- **Live log panel**: real-time streaming job logs during execution
+- **Results tabs**: Scorecard, Equity Curve (SVG), Walk-Forward table, full Trade list
+
 ### Enterprise-Grade Security
 **Password Security**: Argon2 hashing (Password Hashing Competition winner)
 
