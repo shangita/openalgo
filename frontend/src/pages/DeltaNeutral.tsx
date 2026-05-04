@@ -1,9 +1,18 @@
 // v2
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, ChevronsUpDown, RefreshCw, Activity, TrendingDown, TrendingUp, Zap } from 'lucide-react'
+import {
+  Activity, BarChart3, Check, ChevronDown, ChevronUp, ChevronsUpDown,
+  RefreshCw, Terminal, TrendingDown, TrendingUp, Trash2, Zap,
+} from 'lucide-react'
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
 import { useThemeStore } from '@/stores/themeStore'
-import { deltaNeutralApi, type DeltaNeutralLeg, type DeltaNeutralResponse } from '@/api/delta-neutral'
+import {
+  deltaNeutralApi,
+  type DeltaNeutralLeg,
+  type DeltaNeutralResponse,
+  type DnLogEntry,
+  type HedgeLeg,
+} from '@/api/delta-neutral'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
@@ -31,6 +40,9 @@ function fmt(v: number | null | undefined, d = 2) {
 function fmtSign(v: number | null | undefined, d = 2) {
   if (v == null) return '—'
   return (v >= 0 ? '+' : '') + v.toFixed(d)
+}
+function fmtPnl(v: number) {
+  return `${v >= 0 ? '+' : ''}₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 }
 
 // ── Pure-SVG payoff chart ──────────────────────────────────────────────────
@@ -92,19 +104,15 @@ function PayoffChart({ payoff, spotPrice, breakevens, isDark }: {
           stroke={grid} strokeWidth={1} strokeDasharray={v === 0 ? 'none' : '3,3'} />
       ))}
 
-      {/* Green profit area */}
       <polygon points={polyPoints} fill="rgba(34,197,94,0.18)" clipPath="url(#dn-profit-clip)" />
       <polyline points={pts} fill="none" stroke="#22c55e" strokeWidth={2} clipPath="url(#dn-profit-clip)" />
 
-      {/* Red loss area */}
       <polygon points={polyPoints} fill="rgba(239,68,68,0.18)" clipPath="url(#dn-loss-clip)" />
       <polyline points={pts} fill="none" stroke="#ef4444" strokeWidth={2} clipPath="url(#dn-loss-clip)" />
 
-      {/* Zero line */}
       <line x1={PAD.left} x2={PAD.left + cW} y1={y0} y2={y0}
         stroke={isDark ? '#555' : '#9ca3af'} strokeWidth={1} />
 
-      {/* Current spot line */}
       {spotPrice > 0 && spotPrice >= sMin && spotPrice <= sMax && (
         <g>
           <line x1={sx(spotPrice)} x2={sx(spotPrice)} y1={PAD.top} y2={PAD.top + cH}
@@ -113,7 +121,6 @@ function PayoffChart({ payoff, spotPrice, breakevens, isDark }: {
         </g>
       )}
 
-      {/* Breakeven lines */}
       {breakevens.map((be, i) => be >= sMin && be <= sMax && (
         <g key={i}>
           <line x1={sx(be)} x2={sx(be)} y1={PAD.top} y2={PAD.top + cH}
@@ -124,14 +131,12 @@ function PayoffChart({ payoff, spotPrice, breakevens, isDark }: {
         </g>
       ))}
 
-      {/* Y-axis labels */}
       {yTicks.map((v, i) => (
         <text key={i} x={PAD.left - 6} y={sy(v) + 4} textAnchor="end" fill={axisText} fontSize={10}>
           {v >= 0 ? '+' : ''}{(v / 1000).toFixed(0)}k
         </text>
       ))}
 
-      {/* X-axis labels */}
       {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
         <text key={i} x={sx(sMin + t * sRange)} y={H - 6} textAnchor="middle" fill={axisText} fontSize={10}>
           {Math.round(sMin + t * sRange).toLocaleString()}
@@ -167,7 +172,7 @@ function GreekCard({ label, value, d = 2, colorize = false, icon, sub, unit }: {
   )
 }
 
-// ── Leg table row ──────────────────────────────────────────────────────────
+// ── Option leg row ─────────────────────────────────────────────────────────
 function LegRow({ leg }: { leg: DeltaNeutralLeg }) {
   const isShort = leg.quantity < 0
   const pnlCls = leg.pnl >= 0 ? 'text-green-500' : 'text-red-500'
@@ -199,6 +204,30 @@ function LegRow({ leg }: { leg: DeltaNeutralLeg }) {
   )
 }
 
+// ── Hedge / holding row ────────────────────────────────────────────────────
+function HedgeRow({ leg }: { leg: HedgeLeg }) {
+  const isShort = leg.quantity < 0
+  const pnlCls = leg.pnl >= 0 ? 'text-green-500' : 'text-red-500'
+  const typeBadge =
+    leg.type === 'FUT' ? <Badge variant="outline" className="text-xs px-1.5 text-orange-400 border-orange-400">FUT</Badge>
+    : leg.type === 'HOLD' ? <Badge variant="outline" className="text-xs px-1.5 text-purple-400 border-purple-400">HOLD</Badge>
+    : <Badge variant="outline" className="text-xs px-1.5">EQ</Badge>
+  return (
+    <tr className="border-b border-border hover:bg-muted/30">
+      <td className="px-3 py-2 text-xs font-mono">{leg.symbol}</td>
+      <td className="px-3 py-2 text-center">{typeBadge}</td>
+      <td className="px-3 py-2 text-center">
+        <Badge variant={isShort ? 'destructive' : 'outline'} className="text-xs px-1.5">
+          {isShort ? 'SHORT' : 'LONG'} {Math.abs(leg.quantity)}
+        </Badge>
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">{fmt(leg.average_price)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{fmt(leg.ltp)}</td>
+      <td className={`px-3 py-2 text-right tabular-nums font-semibold ${pnlCls}`}>{fmtSign(leg.pnl)}</td>
+    </tr>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function DeltaNeutral() {
   const { mode } = useThemeStore()
@@ -217,6 +246,12 @@ export default function DeltaNeutral() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const reqRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Live log state
+  const [logs, setLogs] = useState<DnLogEntry[]>([])
+  const logSinceRef = useRef(0)
+  const [logOpen, setLogOpen] = useState(true)
+  const logEndRef = useRef<HTMLDivElement>(null)
 
   // Sync exchange when broker capabilities load
   useEffect(() => {
@@ -266,6 +301,22 @@ export default function DeltaNeutral() {
     return () => { cancelled = true }
   }, [underlying, exchange])
 
+  // Auto-scroll log to bottom on new entries
+  useEffect(() => {
+    if (logOpen) logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs, logOpen])
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await deltaNeutralApi.getLogs(logSinceRef.current)
+      if (res.ok && res.data?.logs.length) {
+        const newLogs = res.data.logs
+        setLogs(prev => [...prev, ...newLogs].slice(-200))
+        logSinceRef.current = newLogs[newLogs.length - 1].idx
+      }
+    } catch { /* silent */ }
+  }, [])
+
   const load = useCallback(async (silent = false) => {
     if (!exchange) return
     const id = ++reqRef.current
@@ -283,13 +334,15 @@ export default function DeltaNeutral() {
       }
       setData(resp)
       setUpdatedAt(new Date())
+      // Fetch new logs after portfolio loads
+      fetchLogs()
     } catch {
       if (id !== reqRef.current) return
       if (!silent) showToast.error('Request failed — check your session')
     } finally {
       if (id === reqRef.current && !silent) setLoading(false)
     }
-  }, [underlying, exchange, expiry])
+  }, [underlying, exchange, expiry, fetchLogs])
 
   // Auto-load when expiry first populates
   useEffect(() => {
@@ -303,11 +356,22 @@ export default function DeltaNeutral() {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [autoRefresh, load])
 
-  const port   = data?.portfolio
-  const legs   = data?.legs ?? []
-  const payoff = data?.payoff ?? []
-  const spot   = data?.spot_price ?? 0
-  const bes    = data?.breakevens ?? []
+  const handleClearLogs = async () => {
+    try {
+      await deltaNeutralApi.clearLogs()
+      setLogs([])
+      logSinceRef.current = 0
+    } catch { /* silent */ }
+  }
+
+  const port       = data?.portfolio
+  const legs       = data?.legs ?? []
+  const hedgeLeg   = data?.hedge_legs ?? []
+  const holdingLeg = data?.holding_legs ?? []
+  const allLinear  = [...hedgeLeg, ...holdingLeg]
+  const payoff     = data?.payoff ?? []
+  const spot       = data?.spot_price ?? 0
+  const bes        = data?.breakevens ?? []
   const maxPnl = payoff.length ? Math.max(...payoff.map(p => p.pnl)) : 0
   const minPnl = payoff.length ? Math.min(...payoff.map(p => p.pnl)) : 0
   const score  = port != null
@@ -337,7 +401,6 @@ export default function DeltaNeutral() {
         <CardContent className="pt-4 pb-4">
           <div className="flex flex-wrap items-end gap-3">
 
-            {/* Exchange */}
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground font-medium">Exchange</label>
               <Select value={exchange} onValueChange={v => { setExchange(v); setData(null) }}>
@@ -350,7 +413,6 @@ export default function DeltaNeutral() {
               </Select>
             </div>
 
-            {/* Underlying */}
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground font-medium">Underlying</label>
               <Popover open={ulOpen} onOpenChange={setUlOpen}>
@@ -379,7 +441,6 @@ export default function DeltaNeutral() {
               </Popover>
             </div>
 
-            {/* Expiry */}
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground font-medium">Expiry</label>
               <Select value={expiry} onValueChange={v => setExpiry(v === "__all__" ? "" : v)}>
@@ -471,7 +532,7 @@ export default function DeltaNeutral() {
             <GreekCard label="Net Premium" value={port.net_premium} d={0} colorize
               sub="Received – Paid" unit="₹" />
             <GreekCard label="Total P&L" value={port.total_pnl} d={0} colorize
-              sub="Live unrealised" unit="₹" />
+              sub={allLinear.length > 0 ? 'Options + hedges' : 'Live unrealised'} unit="₹" />
           </div>
 
           {/* Delta health bar */}
@@ -504,7 +565,14 @@ export default function DeltaNeutral() {
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <CardTitle className="text-base">Payoff at Expiry</CardTitle>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    Payoff at Expiry
+                    {allLinear.length > 0 && (
+                      <Badge variant="secondary" className="text-xs font-normal">
+                        incl. {allLinear.length} hedge/holding{allLinear.length !== 1 ? 's' : ''}
+                      </Badge>
+                    )}
+                  </CardTitle>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>Max: <span className="text-green-500 font-semibold">+{maxPnl.toFixed(0)}</span></span>
                     <span>Min: <span className="text-red-500 font-semibold">{minPnl.toFixed(0)}</span></span>
@@ -520,11 +588,11 @@ export default function DeltaNeutral() {
             </Card>
           )}
 
-          {/* Position table */}
+          {/* Options position table */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">
-                Open Positions ({legs.length} leg{legs.length !== 1 ? 's' : ''})
+                Open Positions ({legs.length} option leg{legs.length !== 1 ? 's' : ''})
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -562,13 +630,110 @@ export default function DeltaNeutral() {
                       </td>
                       <td className={`px-3 py-2 text-right tabular-nums font-bold ${
                         port.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {fmtSign(port.total_pnl, 0)}
+                        {fmtPnl(port.total_pnl)}
                       </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </CardContent>
+          </Card>
+
+          {/* Hedge + Holdings table */}
+          {allLinear.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-orange-400" />
+                  Hedge / Holdings
+                  <Badge variant="secondary" className="text-xs">{allLinear.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50">
+                        {['Symbol', 'Type', 'Position', 'Avg Price', 'LTP', 'P&L ₹'].map((h, i) => (
+                          <th key={i} className={`px-3 py-2 font-medium text-xs text-muted-foreground ${
+                            i >= 3 ? 'text-right' : i === 1 || i === 2 ? 'text-center' : 'text-left'}`}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allLinear.map((leg, i) => <HedgeRow key={`${leg.symbol}-${i}`} leg={leg} />)}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-border bg-muted/30 font-semibold text-xs">
+                        <td className="px-3 py-2 text-muted-foreground" colSpan={5}>Hedge Total P&L</td>
+                        <td className={`px-3 py-2 text-right tabular-nums font-bold ${
+                          allLinear.reduce((s, l) => s + l.pnl, 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {fmtPnl(allLinear.reduce((s, l) => s + l.pnl, 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Live Log Panel */}
+          <Card>
+            <CardHeader className="pb-2 pt-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Terminal className="h-4 w-4 text-blue-400" />
+                  Activity Log
+                  {logs.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">{logs.length}</Badge>
+                  )}
+                </CardTitle>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                    title="Clear logs" onClick={handleClearLogs}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => setLogOpen(p => !p)}>
+                    {logOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            {logOpen && (
+              <CardContent className="pt-0 pb-3">
+                <div className="bg-[#050a0e] border border-border rounded font-mono text-xs h-44 overflow-y-auto p-3">
+                  {logs.length === 0 ? (
+                    <span className="text-slate-600">Click Load to see activity…</span>
+                  ) : (
+                    logs.map(log => {
+                      const lvlCls =
+                        log.level === 'ERROR' ? 'text-red-400' :
+                        log.level === 'WARNING' ? 'text-amber-400' :
+                        'text-blue-400'
+                      const msgCls =
+                        log.level === 'ERROR' ? 'text-red-300' :
+                        log.level === 'WARNING' ? 'text-amber-300' :
+                        log.msg.toLowerCase().includes('ready') || log.msg.toLowerCase().includes('portfolio') ? 'text-green-300' :
+                        log.msg.toLowerCase().includes('loading') || log.msg.toLowerCase().includes('computing') ? 'text-sky-300' :
+                        'text-slate-300'
+                      return (
+                        <div key={log.idx} className="flex gap-2 leading-5 min-w-0">
+                          <span className="text-slate-600 shrink-0">{log.ts}</span>
+                          <span className={`shrink-0 w-14 ${lvlCls}`}>{log.level}</span>
+                          <span className="text-slate-500 shrink-0 w-24 truncate">{log.src}</span>
+                          <span className={`${msgCls} break-all`}>{log.msg}</span>
+                        </div>
+                      )
+                    })
+                  )}
+                  <div ref={logEndRef} />
+                </div>
+              </CardContent>
+            )}
           </Card>
         </>
       )}

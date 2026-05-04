@@ -10,12 +10,15 @@ from flask_cors import cross_origin
 
 from database.auth_db import get_api_key_for_tradingview
 from services.delta_neutral_service import get_delta_neutral_portfolio
+from services.delta_neutral_log_buffer import install as _install_log
 from utils.logging import get_logger
 from utils.session import check_session_validity
 
 logger = get_logger(__name__)
 
 delta_neutral_bp = Blueprint("delta_neutral_bp", __name__, url_prefix="/")
+
+_install_log()
 
 
 @delta_neutral_bp.route("/deltaneutral/api/portfolio", methods=["POST"])
@@ -67,3 +70,22 @@ def portfolio():
     except Exception as e:
         logger.exception(f"Delta neutral portfolio API error: {e}")
         return jsonify({"status": "error", "message": "An error occurred"}), 500
+
+
+@delta_neutral_bp.route("/deltaneutral/logs", methods=["GET"])
+@cross_origin()
+@check_session_validity
+def delta_neutral_get_logs():
+    from services.delta_neutral_log_buffer import get_logs, current_seq
+    since = int(request.args.get("since", 0))
+    logs = get_logs(since)
+    return jsonify({"ok": True, "data": {"logs": logs, "seq": current_seq()}})
+
+
+@delta_neutral_bp.route("/deltaneutral/logs/clear", methods=["POST"])
+@cross_origin()
+@check_session_validity
+def delta_neutral_clear_logs():
+    from services.delta_neutral_log_buffer import clear
+    clear()
+    return jsonify({"ok": True})

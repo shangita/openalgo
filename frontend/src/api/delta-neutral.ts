@@ -21,6 +21,16 @@ export interface DeltaNeutralLeg {
   pnl: number
 }
 
+export interface HedgeLeg {
+  symbol: string
+  exchange: string
+  type: 'FUT' | 'EQ' | 'HOLD'
+  quantity: number
+  average_price: number
+  ltp: number
+  pnl: number
+}
+
 export interface PortfolioGreeks {
   net_delta: number
   net_gamma: number
@@ -41,6 +51,8 @@ export interface DeltaNeutralData {
   expiry_date: string
   spot_price: number
   legs: DeltaNeutralLeg[]
+  hedge_legs: HedgeLeg[]
+  holding_legs: HedgeLeg[]
   portfolio: PortfolioGreeks
   payoff: PayoffPoint[]
   breakevens: number[]
@@ -55,6 +67,8 @@ export interface DeltaNeutralResponse {
   expiry_date?: string
   spot_price?: number
   legs?: DeltaNeutralLeg[]
+  hedge_legs?: HedgeLeg[]
+  holding_legs?: HedgeLeg[]
   portfolio?: PortfolioGreeks
   payoff?: PayoffPoint[]
   breakevens?: number[]
@@ -68,6 +82,14 @@ export interface ExpiriesResponse {
 export interface UnderlyingsResponse {
   status: 'success' | 'error'
   underlyings: string[]
+}
+
+export interface DnLogEntry {
+  idx: number
+  ts: string
+  level: string
+  src: string
+  msg: string
 }
 
 export const deltaNeutralApi = {
@@ -94,6 +116,16 @@ export const deltaNeutralApi = {
     const response = await webClient.get<UnderlyingsResponse>(
       `/search/api/underlyings?exchange=${exchange}`
     )
+    return response.data
+  },
+
+  getLogs: async (since = 0): Promise<{ ok: boolean; data?: { logs: DnLogEntry[]; seq: number } }> => {
+    const response = await webClient.get(`/deltaneutral/logs?since=${since}`)
+    return response.data
+  },
+
+  clearLogs: async (): Promise<{ ok: boolean }> => {
+    const response = await webClient.post('/deltaneutral/logs/clear', {})
     return response.data
   },
 }
