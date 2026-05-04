@@ -453,6 +453,13 @@ export default function Backtest() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }
 
+  const clearResults = () => {
+    stopPolling()
+    setJob(null)
+    setLogs([])
+    logSinceRef.current = 0
+  }
+
   const startPolling = (jobId: string) => {
     stopPolling()
     const tick = () => {
@@ -531,7 +538,7 @@ export default function Backtest() {
                 return (
                   <button
                     key={d.key}
-                    onClick={() => setSelectedDataset(d)}
+                    onClick={() => { clearResults(); setSelectedDataset(d) }}
                     className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm border-b border-slate-800 last:border-0 hover:bg-slate-800/60 transition-colors ${isSelected ? 'bg-indigo-950/60 text-indigo-300' : 'text-slate-300'}`}
                   >
                     <div className="flex items-center gap-3">
@@ -569,7 +576,7 @@ export default function Backtest() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => setSelectedStrategy(s)}
+                    onClick={() => { clearResults(); setSelectedStrategy(s) }}
                     className={`w-full rounded-lg border px-4 py-3 text-left transition-colors hover:border-indigo-700 ${isSelected ? 'border-indigo-600 bg-indigo-950/50' : 'border-slate-700 bg-slate-800/30'}`}
                   >
                     <div className="flex items-start justify-between">
