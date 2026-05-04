@@ -324,6 +324,14 @@ function checkCompatibility(ds: BtDataset, st: BtPythonStrategy): { checks: Comp
 
   const checks: CompatCheck[] = [
     {
+      label:  'Signal accuracy',
+      detail: st.has_custom_signals
+        ? 'get_signals() defined — backtest uses actual strategy logic'
+        : 'No get_signals() in strategy file — using generic approximation (results are indicative only)',
+      status: st.has_custom_signals ? 'pass' : 'warn',
+      fatal:  false,
+    },
+    {
       label:  'Instrument match',
       detail: matched === null
         ? `Cannot determine target instrument from strategy name`
@@ -413,6 +421,38 @@ function CompatibilityPanel({ ds, st }: { ds: BtDataset; st: BtPythonStrategy })
 
       {blocked && (
         <p className="text-xs text-red-400 mt-1">Dataset has insufficient bars for this strategy. Choose a larger dataset or a strategy with shorter indicator periods.</p>
+      )}
+
+      {/* get_signals hint — shown when strategy uses generic approximation */}
+      {!st.has_custom_signals && (
+        <details className="group mt-1">
+          <summary className="cursor-pointer list-none flex items-center gap-1.5 text-xs text-yellow-500 hover:text-yellow-300 select-none">
+            <svg className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
+            How to enable accurate backtesting for this strategy
+          </summary>
+          <div className="mt-2 rounded-lg border border-slate-700 bg-slate-900 p-3 space-y-2">
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Add a <code className="bg-slate-800 px-1 rounded text-yellow-300">get_signals</code> function to{" "}
+              <span className="text-slate-300 font-mono">{st.file}</span>. The backtest runner will detect it
+              automatically and use your actual strategy logic instead of the generic approximation.
+            </p>
+            <pre className="text-[11px] leading-relaxed text-slate-300 bg-slate-800/80 rounded p-2 overflow-x-auto whitespace-pre">{`def get_signals(df, sl_mult=1.5, tp_mult=2.0, **params):
+    # df has columns: open, high, low, close, volume (DatetimeIndex)
+    # Compute your indicators here (talib, pandas_ta, etc.)
+    entries       = ...  # pd.Series[bool]
+    exits         = ...  # pd.Series[bool]
+    sl_stop       = ...  # fractional stop, e.g. 0.015 = 1.5%
+    tp_stop       = ...  # fractional target
+    short_entries = ...  # omit or None for long-only
+    short_exits   = ...  # omit or None for long-only
+    return entries, exits, sl_stop, tp_stop, short_entries, short_exits`}</pre>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              <span className="text-yellow-500 font-semibold">Important:</span> keep this function self-contained.
+              Only use the <code className="bg-slate-800 px-1 rounded text-yellow-300">df</code> argument and pure libraries
+              (talib, pandas_ta, numpy). Do not call database or broker APIs inside <code className="bg-slate-800 px-1 rounded text-yellow-300">get_signals</code>.
+            </p>
+          </div>
+        </details>
       )}
     </div>
   )
