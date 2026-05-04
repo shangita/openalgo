@@ -93,7 +93,7 @@ def fetch_ohlc(
     )
     elapsed = (time.monotonic() - t0) * 1000
 
-    if not success or status in (401, 403):
+    if status in (401, 403):
         msg = resp.get("message", "unknown error") if isinstance(resp, dict) else str(resp)
         logger.warning("Auth/permission error fetching %s: %s (status=%s)", symbol, msg, status)
         raise AuthError(f"{symbol}: {msg}")

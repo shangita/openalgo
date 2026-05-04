@@ -9,7 +9,7 @@ NIFTY50: list[tuple[str, str]] = [
     ("HDFCBANK", "NSE"),
     ("BHARTIARTL", "NSE"),
     ("ICICIBANK", "NSE"),
-    ("INFOSYS", "NSE"),
+    ("INFY", "NSE"),
     ("SBIN", "NSE"),
     ("HINDUNILVR", "NSE"),
     ("ITC", "NSE"),
