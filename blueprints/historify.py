@@ -150,6 +150,10 @@ def download_data():
                 }
             ), 400
 
+        source = data.get("source", "broker").lower()
+        if source not in ("broker", "dhan"):
+            source = "broker"
+
         success, response, status_code = service_download_data(
             symbol=symbol,
             exchange=exchange,
@@ -157,6 +161,7 @@ def download_data():
             start_date=start_date,
             end_date=end_date,
             api_key=api_key,
+            source=source,
         )
         return jsonify(response), status_code
     except Exception as e:
@@ -1598,3 +1603,34 @@ def get_schedule_executions(schedule_id):
         logger.error(f"Error getting executions: {e}")
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@historify_bp.route("/api/dhan/credentials", methods=["GET"])
+@cross_origin()
+@check_session_validity
+def dhan_get_credentials():
+    """Return whether Dhan is configured (never return the token itself)."""
+    from services.dhan_data_service import load_credentials, is_configured
+    creds = load_credentials()
+    return jsonify({
+        "status": "success",
+        "configured": is_configured(),
+        "client_id": creds.get("client_id", ""),
+        # access_token masked for security
+        "access_token_set": bool(creds.get("access_token")),
+    }), 200
+
+
+@historify_bp.route("/api/dhan/credentials", methods=["POST"])
+@cross_origin()
+@check_session_validity
+def dhan_save_credentials():
+    """Save Dhan client_id and access_token to config file."""
+    from services.dhan_data_service import save_credentials
+    data = request.get_json(silent=True) or {}
+    client_id = data.get("client_id", "").strip()
+    access_token = data.get("access_token", "").strip()
+    if not client_id or not access_token:
+        return jsonify({"status": "error", "message": "client_id and access_token are required"}), 400
+    save_credentials(client_id, access_token)
+    return jsonify({"status": "success", "message": "Dhan credentials saved"}), 200

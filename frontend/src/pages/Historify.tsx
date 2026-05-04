@@ -279,6 +279,11 @@ export default function Historify() {
   const [startDate, setStartDate] = useState(() => getDateFromPreset(1))
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
   const [incrementalDownload, setIncrementalDownload] = useState(false)
+  const [dataSource, setDataSource] = useState<'broker' | 'dhan'>('broker')
+  const [dhanClientId, setDhanClientId] = useState('')
+  const [dhanAccessToken, setDhanAccessToken] = useState('')
+  const [dhanConfigured, setDhanConfigured] = useState(false)
+  const [dhanSaving, setDhanSaving] = useState(false)
 
   // FNO Discovery state (disabled for now - will be added later)
   // const [fnoExchange, setFnoExchange] = useState<string>('NFO')
@@ -1035,6 +1040,7 @@ export default function Historify() {
           start_date: startDate,
           end_date: endDate,
           incremental: incrementalDownload,
+          source: dataSource,
         }),
       })
       const data = await response.json()
@@ -1057,6 +1063,45 @@ export default function Historify() {
     }
     const symbols = watchlist.map((item) => ({ symbol: item.symbol, exchange: item.exchange }))
     await createDownloadJob(symbols, 'watchlist')
+  }
+
+  const loadDhanCredentials = async () => {
+    try {
+      const r = await fetch('/historify/api/dhan/credentials', { credentials: 'include' })
+      const d = await r.json()
+      if (d.status === 'success') {
+        setDhanClientId(d.client_id || '')
+        setDhanConfigured(d.configured)
+      }
+
+  useEffect(() => { loadDhanCredentials() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    } catch { /* silent */ }
+  }
+
+  const saveDhanCredentials = async () => {
+    if (!dhanClientId.trim() || !dhanAccessToken.trim()) {
+      showToast.error('Both Client ID and Access Token are required', 'historify')
+      return
+    }
+    setDhanSaving(true)
+    try {
+      const csrf = await fetchCSRFToken()
+      const r = await fetch('/historify/api/dhan/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+        credentials: 'include',
+        body: JSON.stringify({ client_id: dhanClientId, access_token: dhanAccessToken }),
+      })
+      const d = await r.json()
+      if (d.status === 'success') {
+        showToast.success('Dhan credentials saved', 'historify')
+        setDhanConfigured(true)
+        setDhanAccessToken('')
+      } else {
+        showToast.error(d.message || 'Failed to save credentials', 'historify')
+      }
+    } catch { showToast.error('Request failed', 'historify') }
+    finally { setDhanSaving(false) }
   }
 
   const pauseJob = async (jobId: string) => {
@@ -1996,6 +2041,82 @@ export default function Historify() {
                           checked={incrementalDownload}
                           onCheckedChange={setIncrementalDownload}
                         />
+                      </div>
+
+                      {/* Data Source */}
+                      <div className="rounded-lg border border-slate-700 p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="font-medium">Data Source</Label>
+                            <p className="text-xs text-muted-foreground">Zerodha (default) or Dhan for historical data</p>
+                          </div>
+                          <div className="flex rounded-lg border border-slate-600 overflow-hidden text-xs">
+                            <button
+                              className={`px-3 py-1.5 font-medium transition-colors ${
+                                dataSource === 'broker'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                              onClick={() => setDataSource('broker')}
+                            >Zerodha</button>
+                            <button
+                              className={`px-3 py-1.5 font-medium transition-colors ${
+                                dataSource === 'dhan'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'text-slate-400 hover:text-slate-200'
+                              }`}
+                              onClick={() => setDataSource('dhan')}
+                            >
+                              Dhan
+                              {dhanConfigured && dataSource !== 'dhan' && (
+                                <span className="ml-1 text-emerald-400">✓</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {dataSource === 'dhan' && (
+                          <div className="space-y-2 pt-1">
+                            {dhanConfigured && (
+                              <p className="text-[11px] text-emerald-500 flex items-center gap-1">
+                                <span>✓</span> Dhan configured (Client ID: {dhanClientId})
+                              </p>
+                            )}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-[10px] text-muted-foreground">Client ID</Label>
+                                <Input
+                                  placeholder="e.g. 10012345"
+                                  value={dhanClientId}
+                                  onChange={e => setDhanClientId(e.target.value)}
+                                  className="h-8 text-xs mt-0.5"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-[10px] text-muted-foreground">Access Token</Label>
+                                <Input
+                                  type="password"
+                                  placeholder="Paste token here"
+                                  value={dhanAccessToken}
+                                  onChange={e => setDhanAccessToken(e.target.value)}
+                                  className="h-8 text-xs mt-0.5"
+                                />
+                              </div>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full h-8 text-xs"
+                              onClick={saveDhanCredentials}
+                              disabled={dhanSaving}
+                            >
+                              {dhanSaving ? 'Saving…' : 'Save Dhan Credentials'}
+                            </Button>
+                            <p className="text-[10px] text-slate-500">
+                              Access token from Dhan developer portal. Refreshed daily.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Download Buttons */}

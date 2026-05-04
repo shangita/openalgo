@@ -283,7 +283,8 @@ def bulk_add_to_watchlist(symbols: list[dict[str, str]]) -> tuple[bool, dict[str
 
 
 def download_data(
-    symbol: str, exchange: str, interval: str, start_date: str, end_date: str, api_key: str
+    symbol: str, exchange: str, interval: str, start_date: str, end_date: str,
+    api_key: str, source: str = "broker"
 ) -> tuple[bool, dict[str, Any], int]:
     """
     Download historical data for a symbol and store in DuckDB.
@@ -315,41 +316,51 @@ def download_data(
                 400,
             )
 
-        logger.info(f"Downloading {symbol}:{exchange}:{interval} from {start_date} to {end_date}")
+        logger.info(f"Downloading {symbol}:{exchange}:{interval} from {start_date} to {end_date} via {source}")
 
-        # Fetch data from broker via history_service
-        success, response, status_code = get_history(
-            symbol=symbol,
-            exchange=exchange,
-            interval=interval,
-            start_date=start_date,
-            end_date=end_date,
-            api_key=api_key,
-        )
-
-        if not success:
-            return False, response, status_code
-
-        data = response.get("data", [])
-        if not data:
-            return (
-                True,
-                {
-                    "status": "success",
-                    "message": "No data available for the specified period",
-                    "records": 0,
-                },
-                200,
+        if source == "dhan":
+            # Fetch directly from Dhan API (no OpenAlgo broker session needed)
+            from services.dhan_data_service import get_dhan_history
+            ok, result = get_dhan_history(symbol, exchange, interval, start_date, end_date)
+            if not ok:
+                return False, {"status": "error", "message": result}, 400
+            df = result
+            if df.empty:
+                return True, {"status": "success", "message": "No data available for the specified period", "records": 0}, 200
+        else:
+            # Fetch data from broker via history_service
+            success, response, status_code = get_history(
+                symbol=symbol,
+                exchange=exchange,
+                interval=interval,
+                start_date=start_date,
+                end_date=end_date,
+                api_key=api_key,
             )
 
-        # Convert to DataFrame
-        df = pd.DataFrame(data)
+            if not success:
+                return False, response, status_code
 
-        # Normalize timestamp column
-        if "time" in df.columns:
-            df["timestamp"] = df["time"]
-        elif "timestamp" not in df.columns:
-            return False, {"status": "error", "message": "No timestamp column in data"}, 500
+            data = response.get("data", [])
+            if not data:
+                return (
+                    True,
+                    {
+                        "status": "success",
+                        "message": "No data available for the specified period",
+                        "records": 0,
+                    },
+                    200,
+                )
+
+            # Convert to DataFrame
+            df = pd.DataFrame(data)
+
+            # Normalize timestamp column
+            if "time" in df.columns:
+                df["timestamp"] = df["time"]
+            elif "timestamp" not in df.columns:
+                return False, {"status": "error", "message": "No timestamp column in data"}, 500
 
         # Store in DuckDB
         records = upsert_market_data(df, symbol, exchange, interval)
