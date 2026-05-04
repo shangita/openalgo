@@ -65,6 +65,7 @@ const IVSmile = lazy(() => import('@/pages/IVSmile'))
 const OIProfile = lazy(() => import('@/pages/OIProfile'))
 const DeltaNeutral = lazy(() => import('@/pages/DeltaNeutral'))
 const Scanner = lazy(() => import('@/pages/Scanner'))
+const Backtest = lazy(() => import('@/pages/Backtest'))
 
 // Strategy pages
 const StrategyIndex = lazy(() => import('@/pages/strategy/StrategyIndex'))
@@ -180,6 +181,7 @@ function App() {
                 <Route path="/oiprofile" element={<OIProfile />} />
                 <Route path="/deltaneutral" element={<DeltaNeutral />} />
                 <Route path="/scanner" element={<Scanner />} />
+                <Route path="/backtest" element={<Backtest />} />
                 <Route path="/websocket/test" element={<WebSocketTest />} />
                 <Route path="/websocket/test/20" element={<WebSocketTest depthLevel={20} />} />
                 <Route path="/websocket/test/30" element={<WebSocketTest depthLevel={30} />} />

@@ -157,6 +157,7 @@ from blueprints.playground import playground_bp  # Import the API playground blu
 from blueprints.pnltracker import pnltracker_bp  # Import the pnl tracker blueprint
 from blueprints.regime import regime_bp  # Import the Regime Monitor blueprint
 from blueprints.scanner import scanner_bp  # Import the Dual-Setup Scanner blueprint
+from blueprints.backtest_bp import backtest_bp  # Import the Backtest blueprint
 from blueprints.python_strategy import python_strategy_bp, initialize_with_app_context as init_python_strategy  # Import the python strategy blueprint
 from blueprints.react_app import (  # Import React frontend blueprint
     is_react_frontend_available,
@@ -331,6 +332,7 @@ def create_app():
     # Exempt API endpoints from CSRF protection (they use API key authentication)
     csrf.exempt(api_v1_bp)
     csrf.exempt(scanner_bp)  # Scanner POST routes use session auth, not CSRF tokens
+    csrf.exempt(backtest_bp)  # Backtest POST routes use session auth
 
     # Initialize security middleware before traffic logging
     init_security_middleware(app)
@@ -363,6 +365,7 @@ def create_app():
     app.register_blueprint(pnltracker_bp)  # Register PnL tracker blueprint
     app.register_blueprint(regime_bp)  # Register Regime Monitor blueprint
     app.register_blueprint(scanner_bp)  # Register Dual-Setup Scanner blueprint
+    app.register_blueprint(backtest_bp)  # Register Backtest blueprint
     app.register_blueprint(python_strategy_bp)  # Register Python strategy blueprint
     app.register_blueprint(telegram_bp)  # Register Telegram blueprint
     app.register_blueprint(security_bp)  # Register Security blueprint
