@@ -8,7 +8,6 @@ sl_stop / tp_stop are fractional stops (e.g. 0.015 = 1.5%) per vectorbt conventi
 """
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pandas_ta as ta
 from typing import Tuple
