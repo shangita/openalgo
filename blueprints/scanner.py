@@ -157,7 +157,7 @@ def scanner_chart_data():
     if not api_key:
         return _err("API key not configured", 401)
 
-    from services.scanner.data_client import get_daily_bars, get_intraday_bars
+    from services.scanner.data_client import get_daily_bars
     from services.scanner.indicators import ema
 
     try:
@@ -190,37 +190,16 @@ def scanner_chart_data():
         ts_ms = int(ts.timestamp() * 1000) if hasattr(ts, "timestamp") else 0
         ema5_line.append({"time": ts_ms, "value": round(float(val), 2)})
 
-    result = {
+    # PDH / PDL from the previous daily bar — always included
+    pdh = float(daily["high"].iloc[-2]) if len(daily) >= 2 else None
+    pdl = float(daily["low"].iloc[-2]) if len(daily) >= 2 else None
+
+    return _ok({
         "daily_candles": daily_candles,
         "ema5_line": ema5_line,
-    }
-
-    # Setup B: add PDH/PDL lines + last 30 5-min bars
-    if setup_id == "B":
-        try:
-            intra = get_intraday_bars(symbol, exchange, "5m", 3, api_key)
-            if not intra.empty:
-                intra30 = intra.tail(30)
-                intra_candles = []
-                for _, row in intra30.iterrows():
-                    ts = row["timestamp"]
-                    ts_ms = int(ts.timestamp() * 1000) if hasattr(ts, "timestamp") else 0
-                    intra_candles.append({
-                        "time": ts_ms,
-                        "open": row["open"], "high": row["high"],
-                        "low": row["low"], "close": row["close"],
-                    })
-                result["intra_candles"] = intra_candles
-        except Exception:
-            pass
-
-        if len(daily) >= 2:
-            pdh = float(daily["high"].iloc[-2])
-            pdl = float(daily["low"].iloc[-2])
-            result["pdh"] = pdh
-            result["pdl"] = pdl
-
-    return _ok(result)
+        "pdh": pdh,
+        "pdl": pdl,
+    })
 
 
 # ─── Paper trading ────────────────────────────────────────────────────────────

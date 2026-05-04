@@ -50,10 +50,8 @@ function relTime(iso: string | null) {
 
 // ── Inline SVG candlestick + EMA5 chart ───────────────────────────────────
 
-function CandleChart({ data, setupId }: { data: ChartData; setupId: 'A' | 'B' }) {
-  const candles = setupId === 'B' && data.intra_candles?.length
-    ? data.intra_candles
-    : data.daily_candles
+function CandleChart({ data }: { data: ChartData }) {
+  const candles = data.daily_candles
   const ema5 = data.ema5_line
   const { pdh, pdl } = data
 
@@ -62,7 +60,7 @@ function CandleChart({ data, setupId }: { data: ChartData; setupId: 'A' | 'B' })
   )
 
   const W = 580, H = 165
-  const PAD = { top: 10, right: setupId === 'B' ? 36 : 14, bottom: 22, left: 54 }
+  const PAD = { top: 10, right: 36, bottom: 22, left: 54 }
   const cW = W - PAD.left - PAD.right
   const cH = H - PAD.top - PAD.bottom
   const n = candles.length
@@ -108,7 +106,6 @@ function CandleChart({ data, setupId }: { data: ChartData; setupId: 'A' | 'B' })
           stroke={grid} strokeWidth={1} />
       ))}
 
-      {/* PDH / PDL for Setup B */}
       {pdh != null && (
         <g>
           <line x1={PAD.left} x2={PAD.left + cW} y1={sy(pdh)} y2={sy(pdh)}
@@ -157,9 +154,7 @@ function CandleChart({ data, setupId }: { data: ChartData; setupId: 'A' | 'B' })
       {/* x-axis labels */}
       {candles.map((c, i) => {
         if (i % Math.max(1, Math.floor(n / 5)) !== 0) return null
-        const label = setupId === 'B'
-          ? new Date(c.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-          : new Date(c.time).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+        const label = new Date(c.time).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
         return (
           <text key={i} x={cx(i)} y={H - 4}
             textAnchor="middle" fill={axis} fontSize={8}>
@@ -659,18 +654,12 @@ export default function Scanner() {
                               <p className="text-xs text-muted-foreground mb-2 flex items-center gap-2">
                                 <span className="font-semibold text-foreground">{sig.symbol}</span>
                                 <span>·</span>
-                                <span>{sig.setup_id === 'B' && chartCache[sig.signal_id]?.intra_candles?.length
-                                  ? '5-min bars'
-                                  : 'Daily bars'}</span>
+                                <span>Daily bars</span>
                                 <span>·</span>
-                                <span className="text-blue-400">Blue = EMA5</span>
-                                {sig.setup_id === 'B' && (
-                                  <>
-                                    <span>·</span>
-                                    <span className="text-green-400">PDH</span>
-                                    <span className="text-red-400">PDL</span>
-                                  </>
-                                )}
+                                <span className="text-blue-400">EMA5</span>
+                                <span>·</span>
+                                <span className="text-green-400">PDH</span>
+                                <span className="text-red-400">PDL</span>
                               </p>
                               {chartLoading === sig.signal_id ? (
                                 <div className="h-[165px] flex items-center justify-center text-muted-foreground text-sm">
@@ -679,7 +668,6 @@ export default function Scanner() {
                               ) : chartCache[sig.signal_id] ? (
                                 <CandleChart
                                   data={chartCache[sig.signal_id]}
-                                  setupId={sig.setup_id}
                                 />
                               ) : null}
                             </div>
