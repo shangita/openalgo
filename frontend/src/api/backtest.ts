@@ -1,4 +1,4 @@
-import axios from 'axios'
+import { webClient } from './client'
 
 export interface BtDataset {
   key: string
@@ -103,8 +103,6 @@ export interface BtLogEntry {
   msg: string
 }
 
-const api = axios.create({ withCredentials: true })
-
 const wrap = async <T>(p: Promise<{ data: { ok: boolean; data: T; error: string | null } }>): Promise<T> => {
   const res = await p
   if (!res.data.ok) throw new Error(res.data.error ?? 'Unknown error')
@@ -112,11 +110,11 @@ const wrap = async <T>(p: Promise<{ data: { ok: boolean; data: T; error: string 
 }
 
 export const btApi = {
-  datasets:         () => wrap<BtDataset[]>(api.get('/backtest/api/datasets')),
-  pythonStrategies: () => wrap<BtPythonStrategy[]>(api.get('/backtest/api/python-strategies')),
+  datasets:         () => wrap<BtDataset[]>(webClient.get('/backtest/api/datasets')),
+  pythonStrategies: () => wrap<BtPythonStrategy[]>(webClient.get('/backtest/api/python-strategies')),
   run: (payload: { dataset_key: string; strategy_id: string }) =>
-    wrap<{ job_id: string }>(api.post('/backtest/api/run', payload)),
-  status:    (jobId: string) => wrap<BtJob>(api.get(`/backtest/api/status/${jobId}`)),
-  logs:      (since: number) => wrap<{ logs: BtLogEntry[]; seq: number }>(api.get('/backtest/logs', { params: { since } })),
-  clearLogs: () => wrap<{ message: string }>(api.post('/backtest/logs/clear')),
+    wrap<{ job_id: string }>(webClient.post('/backtest/api/run', payload)),
+  status:    (jobId: string) => wrap<BtJob>(webClient.get(`/backtest/api/status/${jobId}`)),
+  logs:      (since: number) => wrap<{ logs: BtLogEntry[]; seq: number }>(webClient.get('/backtest/logs', { params: { since } })),
+  clearLogs: () => wrap<{ message: string }>(webClient.post('/backtest/logs/clear')),
 }

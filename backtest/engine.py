@@ -541,15 +541,16 @@ class ParamBacktestEngine:
         m["n_trades"]      = len(pf.trades)
 
         if m["n_trades"] > 0:
-            m["win_rate"]      = _safe(pf.trades.win_rate) * 100
-            m["profit_factor"] = _safe(pf.trades.profit_factor)
+            _wr = _safe(pf.trades.win_rate)
+            m["win_rate"]      = (_wr * 100) if _wr is not None else 0.0
+            m["profit_factor"] = _safe(pf.trades.profit_factor) or 0.0
         else:
             m["win_rate"]      = 0.0
             m["profit_factor"] = 0.0
 
         # ── t-statistic ───────────────────────────────────────────────────
         if m["n_trades"] >= 2:
-            pnls = np.asarray(pf.trades.pnl, dtype=float)
+            pnls = pf.trades.pnl.values.astype(float)
             pnls = pnls[np.isfinite(pnls)]
             t_stat, _ = stats.ttest_1samp(pnls, 0.0)
             m["t_stat"] = float(t_stat)

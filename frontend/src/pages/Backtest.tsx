@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertCircle, CheckCircle2, ChevronDown, ChevronUp,
+  AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
   Database, Play, XCircle,
 } from 'lucide-react'
 import {
@@ -259,6 +259,165 @@ function ResultsPanel({ result }: { result: BtResult }) {
   )
 }
 
+// ─── Compatibility check ──────────────────────────────────────────────────────
+
+const PERIOD_KEYS = new Set(['fast', 'slow', 'rsi_period', 'ema_period'])
+const WFA_N_SPLITS = 8
+const WFA_TRAIN_FRAC = 0.70
+
+// Words that appear in strategy names but are NOT instrument identifiers
+const GENERIC_TOKENS = new Set([
+  'regime','adaptive','sided','two','three','strategy','setup',
+  'scalp','trend','swing','reversal','momentum','breakout','pullback',
+  'crossover','combined','multi','intraday','daily','weekly','monthly',
+  'edge','short','long','bullish','bearish','neutral','hybrid',
+  'mean','rsi','ema','macd','vwap','atr','version','the','and','for',
+])
+
+function instrumentTokens(name: string): string[] {
+  return name
+    .split(/[\s\-_.]+/)
+    .map(t => t.toLowerCase())
+    .filter(t =>
+      t.length >= 4 &&
+      !/^v\d/.test(t) &&       // v1, v3.1
+      !/^\d+$/.test(t) &&       // pure numbers / dates
+      !GENERIC_TOKENS.has(t)
+    )
+}
+
+function checkInstrumentMatch(ds: BtDataset, st: BtPythonStrategy): { matched: boolean | null; hint: string } {
+  const tokens = [...instrumentTokens(st.name), ...instrumentTokens(st.id)]
+  if (tokens.length === 0) return { matched: null, hint: '' }
+  const symLower = ds.symbol.toLowerCase()
+  for (const t of tokens) {
+    if (symLower.includes(t)) return { matched: true, hint: t }
+  }
+  return { matched: false, hint: tokens[0] }
+}
+
+interface CompatCheck {
+  label: string
+  detail: string
+  status: 'pass' | 'warn' | 'fail'
+  fatal: boolean
+}
+
+function checkCompatibility(ds: BtDataset, st: BtPythonStrategy): { checks: CompatCheck[]; blocked: boolean } {
+  const maxPeriod = Math.max(
+    ...Object.entries(st.bt_params).filter(([k]) => PERIOD_KEYS.has(k)).map(([, v]) => v),
+    1
+  )
+  const windowSize = Math.floor(ds.record_count / WFA_N_SPLITS)
+  const isSize     = Math.floor(windowSize * WFA_TRAIN_FRAC)
+  const oosSize    = windowSize - isSize
+
+  const wfaOk    = ds.record_count >= WFA_N_SPLITS * 60
+  const oosPass  = oosSize >= 30
+  const oosWarn  = oosSize >= 10 && oosSize < 30
+  const wrmPass  = isSize >= maxPeriod * 3
+  const wrmWarn  = isSize >= maxPeriod && isSize < maxPeriod * 3
+  const trdPass  = ds.record_count >= 1500
+  const trdWarn  = ds.record_count >= 700 && ds.record_count < 1500
+
+  const { matched, hint } = checkInstrumentMatch(ds, st)
+
+  const checks: CompatCheck[] = [
+    {
+      label:  'Instrument match',
+      detail: matched === null
+        ? `Cannot determine target instrument from strategy name`
+        : matched
+        ? `"${hint}" found in ${ds.symbol} — strategy designed for this instrument`
+        : `Strategy appears designed for "${hint}", not ${ds.symbol} — results may be unreliable`,
+      status: matched === null ? 'warn' : matched ? 'pass' : 'warn',
+      fatal:  false,
+    },
+    {
+      label:  'WFA window size',
+      detail: `${windowSize} bars/window across ${WFA_N_SPLITS} splits (need ≥ 60)`,
+      status: wfaOk ? 'pass' : 'fail',
+      fatal:  !wfaOk,
+    },
+    {
+      label:  'OOS bars per window',
+      detail: `${oosSize} OOS bars (30% of ${windowSize}, need ≥ 10)`,
+      status: oosPass ? 'pass' : oosWarn ? 'warn' : 'fail',
+      fatal:  oosSize < 10,
+    },
+    {
+      label:  'Indicator warmup',
+      detail: `IS window ${isSize} bars vs longest period ${maxPeriod} (need ≥ ${maxPeriod}×3=${maxPeriod * 3})`,
+      status: wrmPass ? 'pass' : wrmWarn ? 'warn' : 'fail',
+      fatal:  isSize < maxPeriod,
+    },
+    {
+      label:  'Trade count (≥ 200 needed)',
+      detail: ds.record_count >= 1500
+        ? `${ds.record_count.toLocaleString()} bars — likely sufficient`
+        : `${ds.record_count.toLocaleString()} bars — may not generate enough trades`,
+      status: trdPass ? 'pass' : trdWarn ? 'warn' : 'fail',
+      fatal:  false,
+    },
+  ]
+
+  return { checks, blocked: checks.some(c => c.fatal) }
+}
+
+function CompatibilityPanel({ ds, st }: { ds: BtDataset; st: BtPythonStrategy }) {
+  const { checks, blocked } = checkCompatibility(ds, st)
+  const hasWarn = checks.some(c => c.status === 'warn')
+
+  const borderCls = blocked
+    ? 'border-red-800 bg-red-950/20'
+    : hasWarn
+    ? 'border-yellow-800 bg-yellow-950/10'
+    : 'border-green-800 bg-green-950/20'
+
+  const badgeCls = blocked
+    ? 'bg-red-900/50 text-red-300'
+    : hasWarn
+    ? 'bg-yellow-900/50 text-yellow-300'
+    : 'bg-green-900/50 text-green-300'
+
+  const badgeLabel = blocked ? 'BLOCKED' : hasWarn ? 'CAUTION' : 'READY'
+
+  return (
+    <div className={`rounded-xl border p-4 space-y-3 ${borderCls}`}>
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Compatibility Check</h2>
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${badgeCls}`}>{badgeLabel}</span>
+        </div>
+        <div className="flex gap-4 text-xs text-slate-400">
+          <span><span className="text-slate-500">Dataset </span>{ds.symbol} · {ds.exchange} · {ds.interval} · {ds.record_count.toLocaleString()} bars</span>
+          <span><span className="text-slate-500">Strategy </span>{st.name} · {st.bt_type}</span>
+        </div>
+      </div>
+
+      {/* Check rows */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {checks.map(c => (
+          <div key={c.label} className="flex items-start gap-2">
+            {c.status === 'pass' && <CheckCircle2 className="h-4 w-4 shrink-0 text-green-400 mt-0.5" />}
+            {c.status === 'warn' && <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400 mt-0.5" />}
+            {c.status === 'fail' && <XCircle       className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />}
+            <div>
+              <div className="text-xs font-medium text-slate-300">{c.label}</div>
+              <div className="text-[11px] text-slate-500 leading-tight">{c.detail}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {blocked && (
+        <p className="text-xs text-red-400 mt-1">Dataset has insufficient bars for this strategy. Choose a larger dataset or a strategy with shorter indicator periods.</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Backtest() {
@@ -329,7 +488,8 @@ export default function Backtest() {
   }
 
   const isRunning = job?.status === 'queued' || job?.status === 'running'
-  const canRun = !!selectedDataset && !!selectedStrategy && !isRunning
+  const compat = selectedDataset && selectedStrategy ? checkCompatibility(selectedDataset, selectedStrategy) : null
+  const canRun = !!selectedDataset && !!selectedStrategy && !isRunning && !(compat?.blocked)
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
@@ -434,6 +594,11 @@ export default function Backtest() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Compatibility panel ── */}
+      {!loading && selectedDataset && selectedStrategy && (
+        <CompatibilityPanel ds={selectedDataset} st={selectedStrategy} />
       )}
 
       {/* ── Run button ── */}
