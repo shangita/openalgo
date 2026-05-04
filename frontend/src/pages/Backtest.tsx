@@ -563,7 +563,12 @@ export default function Backtest() {
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Strategy</h2>
               {selectedStrategy && (
-                <span className="text-xs text-indigo-400 font-medium">{selectedStrategy.bt_type}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-indigo-400 font-medium">{selectedStrategy.bt_type}</span>
+                  {selectedStrategy.has_custom_signals
+                    ? <span className="rounded-full bg-emerald-900/60 border border-emerald-700 px-2 py-0.5 text-[10px] text-emerald-400 font-semibold">Custom Signals</span>
+                    : <span className="rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] text-slate-500">Approx. Signals</span>}
+                </div>
               )}
             </div>
 
@@ -584,7 +589,12 @@ export default function Backtest() {
                         <div className="text-sm font-semibold text-slate-200">{s.name}</div>
                         <div className="text-xs text-slate-500 mt-0.5">{s.file}</div>
                       </div>
-                      <span className="shrink-0 rounded-full bg-slate-700 px-2 py-0.5 text-[10px] text-slate-400 ml-2">{s.bt_type}</span>
+                      <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
+                        <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[10px] text-slate-400">{s.bt_type}</span>
+                        {s.has_custom_signals
+                          ? <span className="rounded-full bg-emerald-900/60 border border-emerald-700 px-2 py-0.5 text-[10px] text-emerald-400 font-semibold">Custom</span>
+                          : <span className="rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] text-slate-500">Approx.</span>}
+                      </div>
                     </div>
                     {Object.keys(s.key_params).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">

@@ -17,6 +17,7 @@ export interface BtPythonStrategy {
   bt_type: string
   bt_params: Record<string, number>
   key_params: Record<string, number>
+  has_custom_signals: boolean
 }
 
 export interface BtScorecard {

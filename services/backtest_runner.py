@@ -100,6 +100,7 @@ def list_python_strategies() -> list[dict]:
             "bt_type": bt_type,
             "bt_params": bt_params,
             "key_params": _summarise_params(raw_params),
+            "has_custom_signals": _has_get_signals(abs_fp),
         })
 
     return result
@@ -191,6 +192,36 @@ def _parse_strategy_params(filepath: str):
     return bt_type, defaults, raw
 
 
+# ─── Custom signal detection ──────────────────────────────────────────────
+
+def _has_get_signals(filepath: str) -> bool:
+    """AST check — no import, just text parsing."""
+    try:
+        with open(filepath) as f:
+            s = f.read()
+        tree = ast.parse(s)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "get_signals":
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _load_get_signals(filepath: str, job_id: str):
+    """Dynamically import strategy file and return get_signals fn, or None."""
+    import importlib.util
+    mod_name = f"_bt_strat_{job_id[:8]}"
+    try:
+        spec = importlib.util.spec_from_file_location(mod_name, filepath)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return getattr(mod, "get_signals", None)
+    except Exception as exc:
+        logger.warning("Strategy module import failed (%s): %s", os.path.basename(filepath), exc)
+        return None
+
+
 # ─── Job helpers ──────────────────────────────────────────────────────────────
 
 def _safe_float(v) -> float:
@@ -270,9 +301,25 @@ def _run_job(job_id: str, dataset_key: str, strategy_id: str) -> None:
         engine = ParamBacktestEngine(instrument=f"{symbol}_{exchange}", freq=freq)
         engine.data = df
 
+        # Try custom get_signals from strategy file first
+        custom_fn = None
+        if _has_get_signals(abs_fp):
+            logger.info("get_signals() found in strategy file, attempting import ...")
+            custom_fn = _load_get_signals(abs_fp, job_id)
+            if custom_fn:
+                logger.info("Using custom get_signals() for signal generation")
+            else:
+                logger.warning("Custom import failed, falling back to generic %s", bt_type)
+
+        if custom_fn:
+            strat_fn = custom_fn
+            bt_label = "Custom"
+        else:
+            strat_fn = STRATEGIES[bt_type]["fn"]
+            bt_label = STRATEGIES[bt_type]["label"] + " (approx)"
+
         # Run signals
-        strat_fn = STRATEGIES[bt_type]["fn"]
-        logger.info("Running %s signals ...", STRATEGIES[bt_type]["label"])
+        logger.info("Running %s signals ...", bt_label)
         result6 = strat_fn(df, **bt_params)
         entries  = result6[0]
         exits    = result6[1]
@@ -371,7 +418,7 @@ def _run_job(job_id: str, dataset_key: str, strategy_id: str) -> None:
             "exchange": exchange,
             "interval": interval,
             "strategy_name": cfg.get("name", strategy_id),
-            "bt_type": STRATEGIES[bt_type]["label"],
+            "bt_type": bt_label,
             "bt_params": {k: v for k, v in bt_params.items() if isinstance(v, (int, float))},
         }
 
