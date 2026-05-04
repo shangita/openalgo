@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, BarChart3, ChevronDown, ChevronRight, Play,
-  RefreshCw, Send, Square, TrendingUp, Zap,
+  Activity, BarChart3, ChevronDown, ChevronRight, ChevronUp, Play,
+  RefreshCw, Send, Square, Terminal, TrendingUp, Trash2, Zap,
   CheckSquare, Square as SquareIcon,
 } from 'lucide-react'
 import {
   scannerApi,
   type ChartData,
+  type LogEntry,
   type ScanSignal,
   type PaperPosition,
   type PaperSummary,
@@ -332,19 +333,26 @@ export default function Scanner() {
   const [chartCache, setChartCache] = useState<Record<string, ChartData>>({})
   const [chartLoading, setChartLoading] = useState<string | null>(null)
 
+  // Live log state
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [logSince, setLogSince] = useState(0)
+  const [logOpen, setLogOpen] = useState(true)
+  const logEndRef = useRef<HTMLDivElement>(null)
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ── Fetch all data ───────────────────────────────────────────────────────
 
   const fetchAll = useCallback(async (silent = true) => {
     try {
-      const [statusRes, signalsRes, paperRes] = await Promise.all([
+      const [statusRes, signalsRes, paperRes, logsRes] = await Promise.all([
         scannerApi.getStatus(),
         scannerApi.getSignals(
           setupFilter !== 'ALL' ? setupFilter : undefined,
           dirFilter !== 'ALL' ? dirFilter : undefined,
         ),
         scannerApi.getPaperStatus(),
+        scannerApi.getLogs(logSince),
       ])
       if (statusRes.ok && statusRes.data) setStatus(statusRes.data)
       if (signalsRes.ok && signalsRes.data) setSignals(signalsRes.data)
@@ -353,11 +361,16 @@ export default function Scanner() {
         setClosedPos(paperRes.data.closed)
         setSummary(paperRes.data.summary)
       }
+      if (logsRes.ok && logsRes.data?.logs.length) {
+        const newLogs = logsRes.data.logs
+        setLogs(prev => [...prev, ...newLogs].slice(-300))
+        setLogSince(newLogs[newLogs.length - 1].idx)
+      }
       setUpdatedAt(new Date())
     } catch {
       if (!silent) showToast.error('Failed to fetch scanner data')
     }
-  }, [setupFilter, dirFilter])
+  }, [setupFilter, dirFilter, logSince])
 
   useEffect(() => { fetchAll(false) }, [setupFilter, dirFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -366,6 +379,11 @@ export default function Scanner() {
     if (autoRefresh) timerRef.current = setInterval(() => fetchAll(true), POLL_MS)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [autoRefresh, fetchAll])
+
+  // Auto-scroll log panel to bottom on new entries
+  useEffect(() => {
+    if (logOpen) logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs, logOpen])
 
   // ── Chart toggle ─────────────────────────────────────────────────────────
 
@@ -471,6 +489,14 @@ export default function Scanner() {
     finally { setActionLoading(null) }
   }
 
+  const handleClearLogs = async () => {
+    try {
+      await scannerApi.clearLogs()
+      setLogs([])
+      setLogSince(0)
+    } catch { /* silent */ }
+  }
+
   const toggleSignal = (id: string) => {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
@@ -545,6 +571,63 @@ export default function Scanner() {
             </div>
           </div>
         </CardContent>
+      </Card>
+
+      {/* Live Log Panel */}
+      <Card>
+        <CardHeader className="pb-2 pt-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-green-500" />
+              Live Logs
+              {logs.length > 0 && (
+                <Badge variant="secondary" className="text-xs">{logs.length}</Badge>
+              )}
+            </CardTitle>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                title="Clear logs" onClick={handleClearLogs}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setLogOpen(p => !p)}>
+                {logOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        {logOpen && (
+          <CardContent className="pt-0 pb-3">
+            <div className="bg-[#050a0e] border border-border rounded font-mono text-xs h-52 overflow-y-auto p-3">
+              {logs.length === 0 ? (
+                <span className="text-slate-600">Waiting for scanner activity — run a scan or start continuous mode…</span>
+              ) : (
+                logs.map(log => {
+                  const lvlCls =
+                    log.level === 'ERROR' ? 'text-red-400' :
+                    log.level === 'WARNING' ? 'text-amber-400' :
+                    'text-emerald-500'
+                  const msgCls =
+                    log.level === 'ERROR' ? 'text-red-300' :
+                    log.level === 'WARNING' ? 'text-amber-300' :
+                    log.msg.toLowerCase().includes('signal') ? 'text-yellow-300' :
+                    log.msg.toLowerCase().includes('closed') || log.msg.toLowerCase().includes('target') ? 'text-green-300' :
+                    log.msg.toLowerCase().includes('open') ? 'text-blue-300' :
+                    'text-slate-300'
+                  return (
+                    <div key={log.idx} className="flex gap-2 leading-5 min-w-0">
+                      <span className="text-slate-600 shrink-0">{log.ts}</span>
+                      <span className={`shrink-0 w-14 ${lvlCls}`}>{log.level}</span>
+                      <span className="text-slate-500 shrink-0 w-20 truncate">{log.src}</span>
+                      <span className={`${msgCls} break-all`}>{log.msg}</span>
+                    </div>
+                  )
+                })
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Summary stats */}

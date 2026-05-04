@@ -55,6 +55,14 @@ export interface ChartData {
   pdl?: number
 }
 
+export interface LogEntry {
+  idx: number
+  ts: string
+  level: string
+  src: string
+  msg: string
+}
+
 export interface SchedulerStatus {
   running: boolean
   paused: boolean
@@ -115,6 +123,16 @@ export const scannerApi = {
 
   testTelegram: async (): Promise<{ ok: boolean; error?: string }> => {
     const response = await webClient.post('/scanner/telegram/test', {})
+    return response.data
+  },
+
+  getLogs: async (since = 0): Promise<{ ok: boolean; data?: { logs: LogEntry[]; seq: number } }> => {
+    const response = await webClient.get(`/scanner/logs?since=${since}`)
+    return response.data
+  },
+
+  clearLogs: async (): Promise<{ ok: boolean }> => {
+    const response = await webClient.post('/scanner/logs/clear', {})
     return response.data
   },
 

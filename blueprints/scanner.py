@@ -318,3 +318,24 @@ def scanner_telegram_test():
     if ok:
         return _ok({"message": "Test message sent"})
     return _err("Failed to send — check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars", 500)
+
+
+# ─── Live log feed ────────────────────────────────────────────────────────────
+
+@scanner_bp.route("/scanner/logs", methods=["GET"])
+@cross_origin()
+@check_session_validity
+def scanner_get_logs():
+    from services.scanner.log_buffer import current_seq, get_logs
+    since = int(request.args.get("since", 0))
+    logs = get_logs(since)
+    return _ok({"logs": logs, "seq": current_seq()})
+
+
+@scanner_bp.route("/scanner/logs/clear", methods=["POST"])
+@cross_origin()
+@check_session_validity
+def scanner_clear_logs():
+    from services.scanner.log_buffer import clear
+    clear()
+    return _ok({"message": "Logs cleared"})
