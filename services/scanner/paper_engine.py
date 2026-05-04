@@ -196,6 +196,10 @@ def _update_one(pos: PaperPosition, api_key: str, trail_mult: float) -> None:
 
     with _positions_lock:
         pos.current_price = bar_close
+        if pos.direction == Direction.LONG:
+            pos.pnl = round((bar_close - pos.entry_price) * pos.qty, 2)
+        else:
+            pos.pnl = round((pos.entry_price - bar_close) * pos.qty, 2)
 
     atr_vals = atr(df5["high"], df5["low"], df5["close"], min(_ATR_PERIOD, len(df5)))
     curr_atr = float(atr_vals.iloc[-1])
@@ -292,7 +296,22 @@ def stop_engine() -> None:
 
 
 def get_positions() -> list[dict]:
-    return store.get_positions_today()
+    rows = store.get_positions_today()
+    with _positions_lock:
+        mem = dict(_positions)
+    for row in rows:
+        pid = row["position_id"]
+        if pid in mem:
+            pos = mem[pid]
+            cp = pos.current_price
+            if cp is not None:
+                row["current_price"] = round(cp, 2)
+                row["trailing_sl"] = round(pos.trailing_sl, 2)
+                if pos.direction == Direction.LONG:
+                    row["pnl"] = round((cp - pos.entry_price) * pos.qty, 2)
+                else:
+                    row["pnl"] = round((pos.entry_price - cp) * pos.qty, 2)
+    return rows
 
 
 def manual_close(position_id: str) -> bool:

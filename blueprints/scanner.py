@@ -272,12 +272,12 @@ def scanner_paper_status():
     open_pos = [p for p in positions if p["status"] in ("OPEN", "DATA_STALLED")]
     closed_pos = [p for p in positions if p["status"] == "CLOSED"]
 
-    total_pnl = sum(p["pnl"] or 0 for p in closed_pos)
+    total_pnl = sum(p["pnl"] or 0 for p in positions)
     wins = sum(1 for p in closed_pos if (p["pnl"] or 0) > 0)
     win_rate = round(wins / len(closed_pos) * 100, 1) if closed_pos else 0
 
-    setup_a_pnl = sum(p["pnl"] or 0 for p in closed_pos if p["setup_id"] == "A")
-    setup_b_pnl = sum(p["pnl"] or 0 for p in closed_pos if p["setup_id"] == "B")
+    setup_a_pnl = sum(p["pnl"] or 0 for p in positions if p["setup_id"] == "A")
+    setup_b_pnl = sum(p["pnl"] or 0 for p in positions if p["setup_id"] == "B")
 
     return _ok({
         "open": open_pos,
