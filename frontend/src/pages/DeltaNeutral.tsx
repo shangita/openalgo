@@ -12,6 +12,9 @@ import {
   type DeltaNeutralResponse,
   type DnLogEntry,
   type HedgeLeg,
+  type DnStrategyState,
+  type DnGreeksSnapshot,
+  type DnTradeEvent,
 } from '@/api/delta-neutral'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -228,6 +231,177 @@ function HedgeRow({ leg }: { leg: HedgeLeg }) {
   )
 }
 
+
+// ── Mini PnL sparkline ─────────────────────────────────────────────────────
+function PnlSparkline({ data }: { data: DnGreeksSnapshot[] }) {
+  if (data.length < 2) return <span className="text-slate-600 text-xs">no data</span>
+  const vals = data.map(d => d.pnl ?? 0)
+  const mn = Math.min(...vals)
+  const mx = Math.max(...vals)
+  const range = mx - mn || 1
+  const W = 160, H = 36
+  const pts = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * W
+    const y = H - ((v - mn) / range) * H
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+  const last = vals[vals.length - 1]
+  const color = last >= 0 ? '#4ade80' : '#f87171'
+  return (
+    <svg width={W} height={H} className="block">
+      <polyline fill="none" stroke={color} strokeWidth="1.5" points={pts} />
+    </svg>
+  )
+}
+
+// ── Strategy live panel ────────────────────────────────────────────────────
+function StrategyLivePanel({
+  state, greeks, trades,
+}: {
+  state: DnStrategyState | null
+  greeks: DnGreeksSnapshot[]
+  trades: DnTradeEvent[]
+}) {
+  const last = greeks.length > 0 ? greeks[greeks.length - 1] : null
+  const updatedAgo = state?.updated_at
+    ? Math.floor((Date.now() - new Date(state.updated_at).getTime()) / 1000)
+    : null
+
+  const statusLabel = !state
+    ? 'NO DATA'
+    : state.entry_done
+    ? 'LIVE'
+    : 'IDLE'
+  const statusCls = !state
+    ? 'bg-slate-800 text-slate-400'
+    : state.entry_done
+    ? 'bg-emerald-900/60 border border-emerald-700 text-emerald-300'
+    : 'bg-yellow-900/40 border border-yellow-700 text-yellow-300'
+
+  function g(v: number | null | undefined, d = 2) {
+    return v == null ? '—' : v.toFixed(d)
+  }
+  function gs(v: number | null | undefined, d = 2) {
+    if (v == null) return '—'
+    return (v >= 0 ? '+' : '') + v.toFixed(d)
+  }
+
+  const eventColor = (t: string) =>
+    t === 'ENTRY' ? 'text-emerald-400'
+    : t === 'EXIT' ? 'text-red-400'
+    : t === 'HEDGE' ? 'text-sky-400'
+    : t === 'STOP' ? 'text-orange-400'
+    : 'text-slate-400'
+
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 space-y-4">
+      {/* Header row */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${statusCls}`}>
+          {statusLabel}
+        </span>
+        <span className="text-sm font-semibold text-slate-200">
+          Delta Neutral v1 — NIFTY Short Straddle
+        </span>
+        {state?.entry_done && (
+          <span className="text-xs text-slate-500 font-mono">
+            {state.ce_sym} · {state.pe_sym}
+            {state.futures_sym ? ` · hedge: ${state.futures_sym}` : ''}
+          </span>
+        )}
+        {updatedAgo != null && (
+          <span className="ml-auto text-[11px] text-slate-600">
+            updated {updatedAgo < 60 ? `${updatedAgo}s` : `${Math.floor(updatedAgo/60)}m`} ago
+          </span>
+        )}
+      </div>
+
+      {/* Greeks + PnL row */}
+      {last && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
+          {[
+            { label: 'Spot',    val: g(last.spot, 0),       cls: 'text-slate-200' },
+            { label: 'Δ Delta', val: gs(last.net_delta, 4), cls: last.net_delta != null && Math.abs(last.net_delta) > 0.15 * 65 ? 'text-amber-400' : 'text-slate-200' },
+            { label: 'Γ Gamma', val: gs(last.net_gamma, 5), cls: 'text-slate-200' },
+            { label: 'Θ Theta', val: gs(last.net_theta, 1), cls: 'text-emerald-400' },
+            { label: 'V Vega',  val: gs(last.net_vega, 1),  cls: 'text-slate-200' },
+            { label: 'Hedge lots', val: String(last.hedge_lots ?? state?.hedge_lots ?? 0), cls: 'text-sky-400' },
+            { label: 'PnL',     val: last.pnl != null ? `${last.pnl >= 0 ? '+' : ''}₹${Math.round(last.pnl).toLocaleString('en-IN')}` : '—', cls: last.pnl != null && last.pnl >= 0 ? 'text-emerald-400' : 'text-red-400' },
+          ].map(({ label, val, cls }) => (
+            <div key={label} className="bg-slate-800/50 rounded-lg px-3 py-2">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</div>
+              <div className={`text-sm font-semibold tabular-nums mt-0.5 ${cls}`}>{val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* PnL sparkline + IV row */}
+      {greeks.length > 1 && (
+        <div className="flex flex-wrap items-center gap-6">
+          <div>
+            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">PnL curve (today)</div>
+            <PnlSparkline data={greeks} />
+          </div>
+          {last && (
+            <div className="flex gap-4 text-xs text-slate-400">
+              <span>CE IV <span className="text-slate-200 font-semibold">{g(last.ce_iv)}%</span></span>
+              <span>PE IV <span className="text-slate-200 font-semibold">{g(last.pe_iv)}%</span></span>
+              {last.var_95 != null && (
+                <span>VaR(95%) <span className="text-amber-400 font-semibold">₹{Math.round(last.var_95).toLocaleString('en-IN')}</span></span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Trade log */}
+      {trades.length > 0 && (
+        <div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-2">Today's events</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[10px] text-slate-600 uppercase">
+                  <th className="text-left py-1 pr-3 font-medium">Time</th>
+                  <th className="text-left py-1 pr-3 font-medium">Event</th>
+                  <th className="text-left py-1 pr-3 font-medium">Symbol</th>
+                  <th className="text-right py-1 pr-3 font-medium">Qty</th>
+                  <th className="text-right py-1 pr-3 font-medium">Hedge lots</th>
+                  <th className="text-right py-1 font-medium">PnL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trades.map((t, i) => {
+                  const timeStr = t.ts ? new Date(t.ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'
+                  return (
+                    <tr key={i} className="border-t border-slate-800">
+                      <td className="py-1.5 pr-3 text-slate-500 font-mono">{timeStr}</td>
+                      <td className={`py-1.5 pr-3 font-semibold ${eventColor(t.event_type)}`}>{t.event_type}</td>
+                      <td className="py-1.5 pr-3 text-slate-400 font-mono truncate max-w-[180px]">{t.symbol || '—'}</td>
+                      <td className="py-1.5 pr-3 text-right text-slate-300">{t.quantity ?? '—'}</td>
+                      <td className="py-1.5 pr-3 text-right text-sky-400">{t.hedge_lots_after ?? '—'}</td>
+                      <td className={`py-1.5 text-right font-semibold ${t.pnl != null ? (t.pnl >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-slate-500'}`}>
+                        {t.pnl != null ? `${t.pnl >= 0 ? '+' : ''}₹${Math.round(t.pnl).toLocaleString('en-IN')}` : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!state && (
+        <p className="text-xs text-slate-600 text-center py-2">
+          Strategy has not run today — start delta_neutral_v1 to see live data here.
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function DeltaNeutral() {
   const { mode } = useThemeStore()
@@ -246,6 +420,12 @@ export default function DeltaNeutral() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const reqRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Strategy live-data state
+  const [dnState, setDnState] = useState<DnStrategyState | null>(null)
+  const [dnGreeks, setDnGreeks] = useState<DnGreeksSnapshot[]>([])
+  const [dnTrades, setDnTrades] = useState<DnTradeEvent[]>([])
+  const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Live log state
   const [logs, setLogs] = useState<DnLogEntry[]>([])
@@ -305,6 +485,26 @@ export default function DeltaNeutral() {
   useEffect(() => {
     if (logOpen) logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs, logOpen])
+
+  const fetchLiveData = useCallback(async () => {
+    try {
+      const [stateRes, greeksRes, tradesRes] = await Promise.all([
+        deltaNeutralApi.getStrategyState(),
+        deltaNeutralApi.getStrategyGreeks(),
+        deltaNeutralApi.getStrategyTrades(),
+      ])
+      if (stateRes.ok)  setDnState(stateRes.data)
+      if (greeksRes.ok) setDnGreeks(greeksRes.data)
+      if (tradesRes.ok) setDnTrades(tradesRes.data)
+    } catch { /* silent */ }
+  }, [])
+
+  useEffect(() => {
+    fetchLiveData()
+    if (liveTimerRef.current) clearInterval(liveTimerRef.current)
+    liveTimerRef.current = setInterval(fetchLiveData, 60_000)
+    return () => { if (liveTimerRef.current) clearInterval(liveTimerRef.current) }
+  }, [fetchLiveData])
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -395,6 +595,9 @@ export default function DeltaNeutral() {
           </div>
         )}
       </div>
+
+      {/* Strategy Live Panel */}
+      <StrategyLivePanel state={dnState} greeks={dnGreeks} trades={dnTrades} />
 
       {/* Controls */}
       <Card>

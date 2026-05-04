@@ -89,3 +89,28 @@ def delta_neutral_clear_logs():
     from services.delta_neutral_log_buffer import clear
     clear()
     return jsonify({"ok": True})
+
+
+@delta_neutral_bp.route("/deltaneutral/api/strategy/state", methods=["GET"])
+@cross_origin()
+@check_session_validity
+def dn_strategy_state():
+    from database.dn_db import get_dn_state
+    return jsonify({"ok": True, "data": get_dn_state()})
+
+
+@delta_neutral_bp.route("/deltaneutral/api/strategy/greeks", methods=["GET"])
+@cross_origin()
+@check_session_validity
+def dn_strategy_greeks():
+    from database.dn_db import get_dn_greeks
+    limit = min(int(request.args.get("limit", 120)), 500)
+    return jsonify({"ok": True, "data": get_dn_greeks(limit)})
+
+
+@delta_neutral_bp.route("/deltaneutral/api/strategy/trades", methods=["GET"])
+@cross_origin()
+@check_session_validity
+def dn_strategy_trades():
+    from database.dn_db import get_dn_trades
+    return jsonify({"ok": True, "data": get_dn_trades()})

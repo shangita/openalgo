@@ -188,6 +188,51 @@ def _find_atm_strike(underlying: str, exchange: str, expiry: str, spot: float) -
     return round(spot / 50) * 50
 
 
+def _db_ensure_tables():
+    """Create dn_* tables if they don't exist (idempotent)."""
+    ddl = [
+        """CREATE TABLE IF NOT EXISTS dn_state (
+            strategy_id TEXT PRIMARY KEY,
+            run_date    DATE NOT NULL,
+            hedge_lots  INTEGER NOT NULL DEFAULT 0,
+            entry_done  BOOLEAN NOT NULL DEFAULT FALSE,
+            ce_sym      TEXT, pe_sym TEXT, futures_sym TEXT,
+            expiry TEXT, atm_strike FLOAT,
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS dn_greeks_log (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            strategy_id TEXT NOT NULL DEFAULT 'delta_neutral_v1',
+            run_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            spot FLOAT, ce_ltp FLOAT, pe_ltp FLOAT,
+            ce_iv FLOAT, pe_iv FLOAT,
+            net_delta FLOAT, net_gamma FLOAT,
+            net_theta FLOAT, net_vega FLOAT,
+            pnl FLOAT, var_95 FLOAT, cvar_95 FLOAT,
+            hedge_lots INTEGER
+        )""",
+        """CREATE TABLE IF NOT EXISTS dn_trade_log (
+            id BIGSERIAL PRIMARY KEY,
+            ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            strategy_id TEXT NOT NULL DEFAULT 'delta_neutral_v1',
+            run_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            event_type TEXT NOT NULL,
+            symbol TEXT, action TEXT, quantity INTEGER,
+            hedge_lots_after INTEGER, pnl FLOAT, reason TEXT
+        )""",
+    ]
+    try:
+        conn = _db_conn()
+        cur = conn.cursor()
+        for stmt in ddl:
+            cur.execute(stmt)
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.warning("DB table creation failed: %s", exc)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Black-Scholes-Merton Greeks (scipy, no py_vollib needed)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -406,6 +451,14 @@ class DeltaNeutralStrategy:
             logger.info(f"PE order: {pe_resp}")
 
             self.entry_done = True
+            self._db_save_state()
+            self._db_log_trade(
+                "ENTRY",
+                symbol=f"{self.ce_sym},{self.pe_sym}",
+                action="SELL",
+                quantity=qty,
+                reason="straddle_entry",
+            )
             return True
         except Exception as e:
             logger.exception(f"Entry failed: {e}")
@@ -490,6 +543,14 @@ class DeltaNeutralStrategy:
             )
             logger.info(f"Hedge order: {resp}")
             self.hedge_lots = new_total
+            self._db_save_state()
+            self._db_log_trade(
+                "HEDGE",
+                symbol=self.futures_sym,
+                action=action,
+                quantity=qty,
+                reason=f"net_delta={net_delta:.4f}",
+            )
         except Exception as e:
             logger.exception(f"Hedge order failed: {e}")
 
@@ -515,6 +576,14 @@ class DeltaNeutralStrategy:
     def exit_all(self, reason: str = "exit") -> None:
         logger.info(f"Exiting all positions — reason: {reason}")
         qty = self.cfg["num_lots"] * self.cfg["lot_size"]
+        self._db_log_trade(
+            "EXIT",
+            symbol=f"{self.ce_sym},{self.pe_sym}",
+            action="BUY",
+            quantity=qty,
+            pnl=self.current_pnl(),
+            reason=reason,
+        )
         try:
             self.client.placesmartorder(
                 strategy="DeltaNeutralV1",
@@ -568,24 +637,161 @@ class DeltaNeutralStrategy:
         close_t = now.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
         return now >= close_t
 
+
+    # ── DB persistence ────────────────────────────────────────────────────────
+
+    def _db_save_state(self) -> None:
+        try:
+            conn = _db_conn()
+            cur = conn.cursor()
+            today = datetime.now(IST).date()
+            cur.execute(
+                """
+                INSERT INTO dn_state
+                    (strategy_id, run_date, hedge_lots, entry_done,
+                     ce_sym, pe_sym, futures_sym, expiry, atm_strike, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (strategy_id) DO UPDATE SET
+                    run_date=EXCLUDED.run_date, hedge_lots=EXCLUDED.hedge_lots,
+                    entry_done=EXCLUDED.entry_done, ce_sym=EXCLUDED.ce_sym,
+                    pe_sym=EXCLUDED.pe_sym, futures_sym=EXCLUDED.futures_sym,
+                    expiry=EXCLUDED.expiry, atm_strike=EXCLUDED.atm_strike,
+                    updated_at=NOW()
+                """,
+                (
+                    "delta_neutral_v1", today, self.hedge_lots, self.entry_done,
+                    self.ce_sym, self.pe_sym, self.futures_sym,
+                    self.expiry, self.atm_strike,
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("DB save state failed: %s", exc)
+
+    def _db_restore_state(self) -> bool:
+        """Return True if today's run was already active (entry_done=True)."""
+        try:
+            conn = _db_conn()
+            cur = conn.cursor()
+            today = datetime.now(IST).date()
+            cur.execute(
+                """
+                SELECT hedge_lots, entry_done, ce_sym, pe_sym,
+                       futures_sym, expiry, atm_strike
+                FROM dn_state
+                WHERE strategy_id = 'delta_neutral_v1' AND run_date = %s
+                """,
+                (today,),
+            )
+            row = cur.fetchone()
+            conn.close()
+            if row and row[1]:
+                (
+                    self.hedge_lots, _, self.ce_sym, self.pe_sym,
+                    self.futures_sym, self.expiry, self.atm_strike,
+                ) = row
+                self.entry_done = True
+                logger.info(
+                    "Restored state from DB: hedge_lots=%d CE=%s PE=%s",
+                    self.hedge_lots, self.ce_sym, self.pe_sym,
+                )
+                return True
+        except Exception as exc:
+            logger.warning("DB restore state failed: %s", exc)
+        return False
+
+    def _db_log_greeks(self, greeks: dict, pnl: float, var: float, cvar: float) -> None:
+        try:
+            conn = _db_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO dn_greeks_log
+                    (strategy_id, run_date, spot, ce_ltp, pe_ltp,
+                     ce_iv, pe_iv, net_delta, net_gamma,
+                     net_theta, net_vega, pnl, var_95, cvar_95, hedge_lots)
+                VALUES (%s, CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    "delta_neutral_v1",
+                    greeks.get("spot"), greeks.get("ce_ltp"), greeks.get("pe_ltp"),
+                    greeks.get("ce_iv"), greeks.get("pe_iv"),
+                    greeks.get("net_delta"), greeks.get("net_gamma"),
+                    greeks.get("net_theta"), greeks.get("net_vega"),
+                    pnl, var, cvar, self.hedge_lots,
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("DB log greeks failed: %s", exc)
+
+    def _db_log_trade(
+        self,
+        event_type: str,
+        symbol: str = "",
+        action: str = "",
+        quantity: int = 0,
+        pnl: float = 0.0,
+        reason: str = "",
+    ) -> None:
+        try:
+            conn = _db_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO dn_trade_log
+                    (strategy_id, run_date, event_type, symbol, action,
+                     quantity, hedge_lots_after, pnl, reason)
+                VALUES (%s, CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    "delta_neutral_v1", event_type, symbol, action,
+                    quantity, self.hedge_lots, pnl, reason,
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("DB log trade failed: %s", exc)
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def run(self) -> None:
         logger.info("=== Delta Neutral Strategy v1 Starting ===")
 
-        if not self.setup():
-            logger.error("Setup failed — aborting")
-            return
+        try:
+            _db_ensure_tables()
+        except Exception as exc:
+            logger.warning("DB init failed (continuing without persistence): %s", exc)
+
+        # Try to resume from a same-day crashed/stopped session
+        restored = self._db_restore_state()
+
+        if not restored:
+            if not self.setup():
+                logger.error("Setup failed — aborting")
+                return
+        else:
+            logger.info("Resuming same-day session (hedge_lots=%d)", self.hedge_lots)
+            if not self.futures_sym:
+                self.futures_sym = _resolve_futures_symbol(
+                    self.cfg["underlying"], self.cfg["futures_exch"]
+                )
 
         # Wait for market open
         while not self._in_market_hours():
             logger.info("Waiting for market open …")
             time.sleep(30)
 
-        # Enter position
-        if not self.enter():
-            logger.error("Entry failed — aborting")
-            return
+        # Enter position only if not already done today
+        if not self.entry_done:
+            if not self.enter():
+                logger.error("Entry failed — aborting")
+                return
+        else:
+            logger.info("Skipping entry — already entered today (hedge_lots=%d)", self.hedge_lots)
 
         logger.info("Position entered. Starting monitoring loop.")
         loop_count = 0
@@ -631,10 +837,12 @@ class DeltaNeutralStrategy:
                     f"PnL=₹{pnl:.2f} | VaR(95%)=₹{var:.2f} CVaR=₹{cvar:.2f} | "
                     f"Hedge lots={self.hedge_lots}"
                 )
+                self._db_log_greeks(greeks, pnl, var, cvar)
 
                 # Stop-loss check
                 if self.risk.should_stop(pnl, self.cfg["max_loss_abs"]):
                     logger.warning(f"Max loss hit (₹{pnl:.2f}) — exiting all")
+                    self._db_log_trade("STOP", pnl=pnl, reason="max_loss")
                     self.exit_all("max_loss")
                     break
 

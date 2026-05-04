@@ -92,6 +92,50 @@ export interface DnLogEntry {
   msg: string
 }
 
+
+// ── Strategy live-run types ────────────────────────────────────────────────
+
+export interface DnStrategyState {
+  strategy_id: string
+  run_date: string
+  hedge_lots: number
+  entry_done: boolean
+  ce_sym: string | null
+  pe_sym: string | null
+  futures_sym: string | null
+  expiry: string | null
+  atm_strike: number | null
+  updated_at: string | null
+}
+
+export interface DnGreeksSnapshot {
+  ts: string
+  spot: number | null
+  ce_ltp: number | null
+  pe_ltp: number | null
+  ce_iv: number | null
+  pe_iv: number | null
+  net_delta: number | null
+  net_gamma: number | null
+  net_theta: number | null
+  net_vega: number | null
+  pnl: number | null
+  var_95: number | null
+  cvar_95: number | null
+  hedge_lots: number | null
+}
+
+export interface DnTradeEvent {
+  ts: string
+  event_type: 'ENTRY' | 'EXIT' | 'HEDGE' | 'STOP' | string
+  symbol: string | null
+  action: string | null
+  quantity: number | null
+  hedge_lots_after: number | null
+  pnl: number | null
+  reason: string | null
+}
+
 export const deltaNeutralApi = {
   getPortfolio: async (params: {
     underlying: string
@@ -128,4 +172,20 @@ export const deltaNeutralApi = {
     const response = await webClient.post('/deltaneutral/logs/clear', {})
     return response.data
   },
+
+  getStrategyState: async (): Promise<{ ok: boolean; data: DnStrategyState | null }> => {
+    const r = await webClient.get('/deltaneutral/api/strategy/state')
+    return r.data
+  },
+
+  getStrategyGreeks: async (limit = 120): Promise<{ ok: boolean; data: DnGreeksSnapshot[] }> => {
+    const r = await webClient.get(`/deltaneutral/api/strategy/greeks?limit=${limit}`)
+    return r.data
+  },
+
+  getStrategyTrades: async (): Promise<{ ok: boolean; data: DnTradeEvent[] }> => {
+    const r = await webClient.get('/deltaneutral/api/strategy/trades')
+    return r.data
+  },
+
 }
