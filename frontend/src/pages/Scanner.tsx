@@ -573,63 +573,6 @@ export default function Scanner() {
         </CardContent>
       </Card>
 
-      {/* Live Log Panel */}
-      <Card>
-        <CardHeader className="pb-2 pt-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Terminal className="h-4 w-4 text-green-500" />
-              Live Logs
-              {logs.length > 0 && (
-                <Badge variant="secondary" className="text-xs">{logs.length}</Badge>
-              )}
-            </CardTitle>
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                title="Clear logs" onClick={handleClearLogs}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                onClick={() => setLogOpen(p => !p)}>
-                {logOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        {logOpen && (
-          <CardContent className="pt-0 pb-3">
-            <div className="bg-[#050a0e] border border-border rounded font-mono text-xs h-52 overflow-y-auto p-3">
-              {logs.length === 0 ? (
-                <span className="text-slate-600">Waiting for scanner activity — run a scan or start continuous mode…</span>
-              ) : (
-                logs.map(log => {
-                  const lvlCls =
-                    log.level === 'ERROR' ? 'text-red-400' :
-                    log.level === 'WARNING' ? 'text-amber-400' :
-                    'text-emerald-500'
-                  const msgCls =
-                    log.level === 'ERROR' ? 'text-red-300' :
-                    log.level === 'WARNING' ? 'text-amber-300' :
-                    log.msg.toLowerCase().includes('signal') ? 'text-yellow-300' :
-                    log.msg.toLowerCase().includes('closed') || log.msg.toLowerCase().includes('target') ? 'text-green-300' :
-                    log.msg.toLowerCase().includes('open') ? 'text-blue-300' :
-                    'text-slate-300'
-                  return (
-                    <div key={log.idx} className="flex gap-2 leading-5 min-w-0">
-                      <span className="text-slate-600 shrink-0">{log.ts}</span>
-                      <span className={`shrink-0 w-14 ${lvlCls}`}>{log.level}</span>
-                      <span className="text-slate-500 shrink-0 w-20 truncate">{log.src}</span>
-                      <span className={`${msgCls} break-all`}>{log.msg}</span>
-                    </div>
-                  )
-                })
-              )}
-              <div ref={logEndRef} />
-            </div>
-          </CardContent>
-        )}
-      </Card>
-
       {/* Summary stats */}
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -750,6 +693,63 @@ export default function Scanner() {
             </div>
           )}
         </CardContent>
+      </Card>
+
+      {/* Live Log Panel */}
+      <Card>
+        <CardHeader className="pb-2 pt-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-green-500" />
+              Live Logs
+              {logs.length > 0 && (
+                <Badge variant="secondary" className="text-xs">{logs.length}</Badge>
+              )}
+            </CardTitle>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                title="Clear logs" onClick={handleClearLogs}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setLogOpen(p => !p)}>
+                {logOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        {logOpen && (
+          <CardContent className="pt-0 pb-3">
+            <div className="bg-[#050a0e] border border-border rounded font-mono text-xs h-52 overflow-y-auto p-3">
+              {logs.length === 0 ? (
+                <span className="text-slate-600">Waiting for scanner activity — run a scan or start continuous mode…</span>
+              ) : (
+                logs.map(log => {
+                  const lvlCls =
+                    log.level === 'ERROR' ? 'text-red-400' :
+                    log.level === 'WARNING' ? 'text-amber-400' :
+                    'text-emerald-500'
+                  const msgCls =
+                    log.level === 'ERROR' ? 'text-red-300' :
+                    log.level === 'WARNING' ? 'text-amber-300' :
+                    log.msg.toLowerCase().includes('signal') ? 'text-yellow-300' :
+                    log.msg.toLowerCase().includes('closed') || log.msg.toLowerCase().includes('target') ? 'text-green-300' :
+                    log.msg.toLowerCase().includes('open') ? 'text-blue-300' :
+                    'text-slate-300'
+                  return (
+                    <div key={log.idx} className="flex gap-2 leading-5 min-w-0">
+                      <span className="text-slate-600 shrink-0">{log.ts}</span>
+                      <span className={`shrink-0 w-14 ${lvlCls}`}>{log.level}</span>
+                      <span className="text-slate-500 shrink-0 w-20 truncate">{log.src}</span>
+                      <span className={`${msgCls} break-all`}>{log.msg}</span>
+                    </div>
+                  )
+                })
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Open Positions */}
