@@ -4,7 +4,10 @@ Monitors open option positions, computes portfolio Greeks and payoff chart.
 Includes futures / equity hedge legs and holdings in payoff calculation.
 """
 
+import math
 import re
+
+from scipy.stats import norm as _norm
 from datetime import datetime
 from typing import Any
 
@@ -24,6 +27,25 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 IST = pytz.timezone("Asia/Kolkata")
+
+
+_RISK_FREE = 0.065
+
+
+def _bsm_price(S, K, T, r, sigma, flag):
+    if T <= 0:
+        return max(0.0, S - K) if flag == 'c' else max(0.0, K - S)
+    if sigma <= 0 or S <= 0 or K <= 0:
+        return 0.0
+    try:
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        if flag == 'c':
+            return float(S * _norm.cdf(d1) - K * math.exp(-r * T) * _norm.cdf(d2))
+        return float(K * math.exp(-r * T) * _norm.cdf(-d2) - S * _norm.cdf(-d1))
+    except Exception:
+        return 0.0
+
 
 OPTION_EXCHANGES = {"NFO", "BFO", "CDS", "MCX"}
 
@@ -257,12 +279,12 @@ def get_delta_neutral_portfolio(
                     api_key=api_key,
                 )
                 if ok_g and g_resp.get("status") == "success":
-                    gdata = g_resp.get("data", {})
-                    leg_delta = gdata.get("delta")
-                    leg_gamma = gdata.get("gamma")
-                    leg_theta = gdata.get("theta")
-                    leg_vega = gdata.get("vega")
-                    leg_iv = gdata.get("iv")
+                    _gk = g_resp.get("greeks", {})
+                    leg_delta = _gk.get("delta")
+                    leg_gamma = _gk.get("gamma")
+                    leg_theta = _gk.get("theta")
+                    leg_vega = _gk.get("vega")
+                    leg_iv = g_resp.get("implied_volatility")
 
             if leg_delta is not None:
                 net_delta += leg_delta * qty
@@ -286,7 +308,7 @@ def get_delta_neutral_portfolio(
                 "average_price": round(avg_price, 2),
                 "ltp": round(ltp, 2),
                 "days_to_expiry": round(days_to_expiry, 2),
-                "iv": round(leg_iv * 100, 2) if leg_iv is not None else None,
+                "iv": round(leg_iv, 2) if leg_iv is not None else None,
                 "delta": round(leg_delta, 4) if leg_delta is not None else None,
                 "gamma": round(leg_gamma, 6) if leg_gamma is not None else None,
                 "theta": round(leg_theta, 2) if leg_theta is not None else None,
@@ -305,7 +327,11 @@ def get_delta_neutral_portfolio(
         atm = spot_price if spot_price > 0 else (
             enriched_legs[0]["strike"] if enriched_legs else 0
         )
-        spot_range_pct = 0.20
+        # Use 3-sigma expected move for range (min 8%, max 15%)
+        avg_iv = (sum(lg.get('iv') or 20.0 for lg in enriched_legs) / max(len(enriched_legs), 1)) / 100.0
+        T_days_avg = (sum(lg['days_to_expiry'] for lg in enriched_legs) / max(len(enriched_legs), 1))
+        sigma_move = avg_iv * math.sqrt(max(T_days_avg, 1) / 365.0)
+        spot_range_pct = min(max(3.0 * sigma_move, 0.08), 0.15)
         n_points = 101
         if atm > 0:
             s_min = atm * (1 - spot_range_pct)
@@ -319,20 +345,23 @@ def get_delta_neutral_portfolio(
         payoff = []
         for i in range(n_points):
             S = s_min + i * step
-            pnl_at_expiry = 0.0
+            pnl_at_s = 0.0
             for leg in enriched_legs:
                 K = leg["strike"]
                 qty = leg["quantity"]
                 avg_p = leg["average_price"]
                 otype = leg["option_type"]
-                intrinsic = max(0.0, S - K) if otype == "CE" else max(0.0, K - S)
+                T_leg = max(0.0, leg["days_to_expiry"]) / 365.0
+                iv_pct = leg.get("iv") or 20.0
+                flag = "c" if otype == "CE" else "p"
+                bsm_p = _bsm_price(S, K, T_leg, _RISK_FREE, iv_pct / 100.0, flag)
                 if qty < 0:
-                    pnl_at_expiry += (avg_p - intrinsic) * (-qty)
+                    pnl_at_s += (avg_p - bsm_p) * (-qty)
                 else:
-                    pnl_at_expiry += (intrinsic - avg_p) * qty
+                    pnl_at_s += (bsm_p - avg_p) * qty
             for lin in linear_legs:
-                pnl_at_expiry += lin["quantity"] * (S - lin["average_price"])
-            payoff.append({"spot": round(S, 2), "pnl": round(pnl_at_expiry, 2)})
+                pnl_at_s += lin["quantity"] * (S - lin["average_price"])
+            payoff.append({"spot": round(S, 2), "pnl": round(pnl_at_s, 2)})
 
         breakevens = []
         for i in range(1, len(payoff)):

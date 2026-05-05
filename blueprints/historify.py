@@ -1606,7 +1606,7 @@ def get_schedule_executions(schedule_id):
 
 
 @historify_bp.route("/api/dhan/credentials", methods=["GET"])
-@cross_origin()
+
 @check_session_validity
 def dhan_get_credentials():
     """Return whether Dhan is configured (never return the token itself)."""
@@ -1622,7 +1622,7 @@ def dhan_get_credentials():
 
 
 @historify_bp.route("/api/dhan/credentials", methods=["POST"])
-@cross_origin()
+
 @check_session_validity
 def dhan_save_credentials():
     """Save Dhan client_id and access_token to config file."""

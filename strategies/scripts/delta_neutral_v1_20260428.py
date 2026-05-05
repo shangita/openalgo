@@ -381,7 +381,7 @@ class DeltaNeutralStrategy:
         if not self.expiry:
             return 0.0
         try:
-            exp_dt = datetime.strptime(self.expiry, "%d%b%y".upper())
+            exp_dt = datetime.strptime(self.expiry.title(), "%d%b%y")
             now = datetime.now(IST).replace(tzinfo=None)
             return max(0.0, (exp_dt - now).total_seconds() / 86400)
         except Exception:
@@ -715,11 +715,11 @@ class DeltaNeutralStrategy:
                 """,
                 (
                     "delta_neutral_v1",
-                    greeks.get("spot"), greeks.get("ce_ltp"), greeks.get("pe_ltp"),
-                    greeks.get("ce_iv"), greeks.get("pe_iv"),
-                    greeks.get("net_delta"), greeks.get("net_gamma"),
-                    greeks.get("net_theta"), greeks.get("net_vega"),
-                    pnl, var, cvar, self.hedge_lots,
+                    float(greeks.get("spot", 0)), float(greeks.get("ce_ltp", 0)), float(greeks.get("pe_ltp", 0)),
+                    float(greeks.get("ce_iv", 0)), float(greeks.get("pe_iv", 0)),
+                    float(greeks.get("net_delta", 0)), float(greeks.get("net_gamma", 0)),
+                    float(greeks.get("net_theta", 0)), float(greeks.get("net_vega", 0)),
+                    float(pnl), float(var), float(cvar), int(self.hedge_lots),
                 ),
             )
             conn.commit()

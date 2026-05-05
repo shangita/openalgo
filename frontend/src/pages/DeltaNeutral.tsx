@@ -5,7 +5,6 @@ import {
   RefreshCw, Terminal, TrendingDown, TrendingUp, Trash2, Zap,
 } from 'lucide-react'
 import { useSupportedExchanges } from '@/hooks/useSupportedExchanges'
-import { useThemeStore } from '@/stores/themeStore'
 import {
   deltaNeutralApi,
   type DeltaNeutralLeg,
@@ -49,16 +48,17 @@ function fmtPnl(v: number) {
 }
 
 // ── Pure-SVG payoff chart ──────────────────────────────────────────────────
-function PayoffChart({ payoff, spotPrice, breakevens, isDark }: {
+function PayoffChart({ payoff, spotPrice, breakevens, legs, hedgeLegs }: {
   payoff: { spot: number; pnl: number }[]
   spotPrice: number
   breakevens: number[]
-  isDark: boolean
+  legs: import('@/api/delta-neutral').DeltaNeutralLeg[]
+  hedgeLegs: import('@/api/delta-neutral').HedgeLeg[]
 }) {
   if (!payoff || payoff.length === 0) return null
 
-  const W = 800, H = 220
-  const PAD = { top: 12, right: 20, bottom: 36, left: 64 }
+  const W = 820, H = 280
+  const PAD = { top: 30, right: 24, bottom: 46, left: 68 }
   const cW = W - PAD.left - PAD.right
   const cH = H - PAD.top - PAD.bottom
 
@@ -83,11 +83,51 @@ function PayoffChart({ payoff, spotPrice, breakevens, isDark }: {
     `${(PAD.left + cW).toFixed(1)},${y0.toFixed(1)}`,
   ].join(' ')
 
-  const grid = isDark ? '#2a2a2a' : '#e5e7eb'
-  const axisText = isDark ? '#9ca3af' : '#6b7280'
-  const bg = isDark ? '#0f0f0f' : '#ffffff'
+  const grid = '#2e2e2e'
+  const axisText = '#8b8b8b'
+  const bg = '#0d0d0d'
 
   const yTicks = Array.from(new Set([pMin, pMin / 2, 0, pMax / 2, pMax]))
+
+  // Max / min PnL positions
+  const maxPnlVal = Math.max(...allPnls)
+  const maxPnlIdx = allPnls.indexOf(maxPnlVal)
+  const maxPnlSpot = allSpots[maxPnlIdx]
+  const minPnlVal = Math.min(...allPnls)
+  const minPnlIdx = allPnls.indexOf(minPnlVal)
+  const minPnlSpot = allSpots[minPnlIdx]
+
+  // Live PnL at current spot
+  const spotPnl = (() => {
+    if (spotPrice <= 0 || spotPrice < sMin || spotPrice > sMax) return null
+    const idx = payoff.findIndex(p => p.spot >= spotPrice)
+    if (idx <= 0) return payoff[0]?.pnl ?? null
+    const p0 = payoff[idx - 1], p1 = payoff[idx]
+    const ratio = (spotPrice - p0.spot) / (p1.spot - p0.spot)
+    return p0.pnl + ratio * (p1.pnl - p0.pnl)
+  })()
+
+  // Group option strikes: { strike -> { types: string[], avgPrices: number[], qtys: number[] } }
+  const strikeMap: Record<number, { types: string[]; avgPrices: number[]; qtys: number[] }> = {}
+  for (const leg of legs) {
+    const k = leg.strike
+    if (k <= 0 || k < sMin || k > sMax) continue
+    if (!strikeMap[k]) strikeMap[k] = { types: [], avgPrices: [], qtys: [] }
+    strikeMap[k].types.push(leg.option_type)
+    strikeMap[k].avgPrices.push(leg.average_price)
+    strikeMap[k].qtys.push(leg.quantity)
+  }
+
+  // Hedge entry levels (futures only, within range)
+  const hedgeLevels = hedgeLegs
+    .filter(h => h.type === 'FUT' && h.average_price >= sMin && h.average_price <= sMax)
+    .map(h => ({ price: h.average_price, qty: h.quantity, symbol: h.symbol }))
+
+  // Helper: label anchor + offset avoiding chart edges
+  const labelAnchor = (x: number) =>
+    x > PAD.left + cW * 0.68 ? 'end' : x < PAD.left + cW * 0.32 ? 'start' : 'middle'
+  const labelDx = (x: number) =>
+    x > PAD.left + cW * 0.68 ? -8 : x < PAD.left + cW * 0.32 ? 8 : 0
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
@@ -100,56 +140,183 @@ function PayoffChart({ payoff, spotPrice, breakevens, isDark }: {
         </clipPath>
       </defs>
 
+      {/* Chart background */}
       <rect x={PAD.left} y={PAD.top} width={cW} height={cH} fill={bg} />
 
+      {/* Horizontal grid */}
       {yTicks.map((v, i) => (
         <line key={i} x1={PAD.left} x2={PAD.left + cW} y1={sy(v)} y2={sy(v)}
           stroke={grid} strokeWidth={1} strokeDasharray={v === 0 ? 'none' : '3,3'} />
       ))}
 
-      <polygon points={polyPoints} fill="rgba(34,197,94,0.18)" clipPath="url(#dn-profit-clip)" />
-      <polyline points={pts} fill="none" stroke="#22c55e" strokeWidth={2} clipPath="url(#dn-profit-clip)" />
+      {/* ── Strike price lines (behind curve) ── */}
+      {Object.entries(strikeMap).map(([strikeStr, info], i) => {
+        const k = Number(strikeStr)
+        const x = sx(k)
+        const typeLabel = info.types.join('/')
+        const avgLabel = info.avgPrices.map(p => `@${p.toFixed(0)}`).join(' ')
+        return (
+          <g key={`strike-${i}`}>
+            <line x1={x} x2={x} y1={PAD.top} y2={PAD.top + cH}
+              stroke="#c084fc" strokeWidth={1.5} strokeDasharray="6,3" />
+            {/* Strike price label at top */}
+            <text x={x} y={PAD.top + 11} fill="#d8b4fe" fontSize={9} textAnchor="middle" fontWeight="600">
+              {k.toLocaleString()}
+            </text>
+            <text x={x} y={PAD.top + 21} fill="#c084fc" fontSize={8} textAnchor="middle">
+              {typeLabel} {avgLabel}
+            </text>
+          </g>
+        )
+      })}
 
-      <polygon points={polyPoints} fill="rgba(239,68,68,0.18)" clipPath="url(#dn-loss-clip)" />
-      <polyline points={pts} fill="none" stroke="#ef4444" strokeWidth={2} clipPath="url(#dn-loss-clip)" />
-
-      <line x1={PAD.left} x2={PAD.left + cW} y1={y0} y2={y0}
-        stroke={isDark ? '#555' : '#9ca3af'} strokeWidth={1} />
-
-      {spotPrice > 0 && spotPrice >= sMin && spotPrice <= sMax && (
-        <g>
-          <line x1={sx(spotPrice)} x2={sx(spotPrice)} y1={PAD.top} y2={PAD.top + cH}
-            stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="5,4" />
-          <text x={sx(spotPrice) + 4} y={PAD.top + 12} fill="#3b82f6" fontSize={10}>Spot</text>
-        </g>
-      )}
-
-      {breakevens.map((be, i) => be >= sMin && be <= sMax && (
-        <g key={i}>
-          <line x1={sx(be)} x2={sx(be)} y1={PAD.top} y2={PAD.top + cH}
-            stroke="#f59e0b" strokeWidth={1} strokeDasharray="4,3" />
-          <text x={sx(be) + 3} y={PAD.top + cH - 4} fill="#f59e0b" fontSize={9}>
-            {be.toLocaleString()}
+      {/* ── Futures hedge entry lines ── */}
+      {hedgeLevels.map((h, i) => (
+        <g key={`hedge-${i}`}>
+          <line x1={sx(h.price)} x2={sx(h.price)} y1={PAD.top} y2={PAD.top + cH}
+            stroke="#fb923c" strokeWidth={1.5} strokeDasharray="5,4" />
+          <text x={sx(h.price)} y={PAD.top + cH - 4} fill="#fb923c" fontSize={8} textAnchor="middle">
+            FUT {h.qty > 0 ? '+' : ''}{h.qty} @{h.price.toFixed(0)}
           </text>
         </g>
       ))}
 
+      {/* Max profit reference line (faint) */}
+      {maxPnlVal > 0 && (
+        <line x1={PAD.left} x2={PAD.left + cW} y1={sy(maxPnlVal)} y2={sy(maxPnlVal)}
+          stroke="#22c55e" strokeWidth={1} strokeDasharray="4,5" opacity={0.6} />
+      )}
+
+      {/* Max loss reference line (faint) */}
+      {minPnlVal < 0 && (
+        <line x1={PAD.left} x2={PAD.left + cW} y1={sy(minPnlVal)} y2={sy(minPnlVal)}
+          stroke="#ef4444" strokeWidth={1} strokeDasharray="4,5" opacity={0.6} />
+      )}
+
+      {/* ── Payoff curve fills ── */}
+      <polygon points={polyPoints} fill="rgba(34,197,94,0.18)" clipPath="url(#dn-profit-clip)" />
+      <polyline points={pts} fill="none" stroke="#4ade80" strokeWidth={2.5} clipPath="url(#dn-profit-clip)" />
+
+      <polygon points={polyPoints} fill="rgba(239,68,68,0.18)" clipPath="url(#dn-loss-clip)" />
+      <polyline points={pts} fill="none" stroke="#f87171" strokeWidth={2.5} clipPath="url(#dn-loss-clip)" />
+
+      {/* Zero baseline */}
+      <line x1={PAD.left} x2={PAD.left + cW} y1={y0} y2={y0}
+        stroke='#666666' strokeWidth={1.5} />
+
+      {/* ── Breakeven lines ── */}
+      {breakevens.map((be, i) => be >= sMin && be <= sMax && (
+        <g key={`be-${i}`}>
+          <line x1={sx(be)} x2={sx(be)} y1={PAD.top} y2={PAD.top + cH}
+            stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="4,3" />
+          <text x={sx(be)} y={PAD.top + cH + 14} fill="#f59e0b" fontSize={9} textAnchor="middle">
+            BE {be.toLocaleString()}
+          </text>
+        </g>
+      ))}
+
+      {/* ── Spot price line ── */}
+      {spotPrice > 0 && spotPrice >= sMin && spotPrice <= sMax && (
+        <g>
+          <line x1={sx(spotPrice)} x2={sx(spotPrice)} y1={PAD.top} y2={PAD.top + cH}
+            stroke="#60a5fa" strokeWidth={2} strokeDasharray="5,4" />
+          <text x={sx(spotPrice) + 4} y={PAD.top + 10} fill="#3b82f6" fontSize={10} fontWeight="600">
+            {spotPrice.toLocaleString()}
+          </text>
+        </g>
+      )}
+
+      {/* ── Max profit marker ── */}
+      {maxPnlVal > 0 && maxPnlSpot >= sMin && maxPnlSpot <= sMax && (() => {
+        const cx = sx(maxPnlSpot), cy = sy(maxPnlVal)
+        const anchor = labelAnchor(cx)
+        const dx = labelDx(cx)
+        const aboveRoom = cy - PAD.top > 22
+        return (
+          <g>
+            <circle cx={cx} cy={cy} r={6} fill="#22c55e" stroke={bg} strokeWidth={2} />
+            <text x={cx + dx} y={aboveRoom ? cy - 10 : cy + 16}
+              textAnchor={anchor} fill="#22c55e" fontSize={10} fontWeight="700">
+              ▲ MAX +{(maxPnlVal / 1000).toFixed(1)}k
+            </text>
+          </g>
+        )
+      })()}
+
+      {/* ── Max loss marker ── */}
+      {minPnlVal < 0 && minPnlSpot >= sMin && minPnlSpot <= sMax && (() => {
+        const cx = sx(minPnlSpot), cy = sy(minPnlVal)
+        const anchor = labelAnchor(cx)
+        const dx = labelDx(cx)
+        const belowRoom = PAD.top + cH - cy > 16
+        return (
+          <g>
+            <circle cx={cx} cy={cy} r={6} fill="#ef4444" stroke={bg} strokeWidth={2} />
+            <text x={cx + dx} y={belowRoom ? cy + 16 : cy - 10}
+              textAnchor={anchor} fill="#ef4444" fontSize={10} fontWeight="700">
+              ▼ MAX LOSS {(minPnlVal / 1000).toFixed(1)}k
+            </text>
+          </g>
+        )
+      })()}
+
+      {/* ── Live PnL dot at spot ── */}
+      {spotPrice > 0 && spotPnl != null && spotPrice >= sMin && spotPrice <= sMax && (() => {
+        const cx = sx(spotPrice), cy = sy(spotPnl)
+        return (
+          <g>
+            <circle cx={cx} cy={cy} r={5}
+              fill={spotPnl >= 0 ? '#22c55e' : '#ef4444'} stroke={bg} strokeWidth={1.5} />
+            <text
+              x={cx + (cx > PAD.left + cW * 0.65 ? -8 : 10)}
+              y={cy - 8}
+              textAnchor={cx > PAD.left + cW * 0.65 ? 'end' : 'start'}
+              fill={spotPnl >= 0 ? '#22c55e' : '#ef4444'} fontSize={10} fontWeight="600">
+              {spotPnl >= 0 ? '+' : ''}{(spotPnl / 1000).toFixed(1)}k
+            </text>
+          </g>
+        )
+      })()}
+
+      {/* ── Y axis labels ── */}
       {yTicks.map((v, i) => (
         <text key={i} x={PAD.left - 6} y={sy(v) + 4} textAnchor="end" fill={axisText} fontSize={10}>
           {v >= 0 ? '+' : ''}{(v / 1000).toFixed(0)}k
         </text>
       ))}
 
+      {/* ── X axis labels ── */}
       {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
-        <text key={i} x={sx(sMin + t * sRange)} y={H - 6} textAnchor="middle" fill={axisText} fontSize={10}>
+        <text key={i} x={sx(sMin + t * sRange)} y={H - 28} textAnchor="middle" fill={axisText} fontSize={10}>
           {Math.round(sMin + t * sRange).toLocaleString()}
         </text>
       ))}
-      <text x={W / 2} y={H - 0} textAnchor="middle" fill={axisText} fontSize={10}>Spot at Expiry</text>
+      <text x={W / 2} y={H - 12} textAnchor="middle" fill={axisText} fontSize={10}>Underlying Price</text>
+
+      {/* ── Legend ── */}
+      <rect x={PAD.left + 4}   y={PAD.top + 2} width={7} height={7} fill="rgba(34,197,94,0.5)" />
+      <text x={PAD.left + 14}  y={PAD.top + 9} fill={axisText} fontSize={9}>Profit</text>
+      <rect x={PAD.left + 48}  y={PAD.top + 2} width={7} height={7} fill="rgba(239,68,68,0.5)" />
+      <text x={PAD.left + 58}  y={PAD.top + 9} fill={axisText} fontSize={9}>Loss</text>
+      <line x1={PAD.left + 92} x2={PAD.left + 104} y1={PAD.top + 5} y2={PAD.top + 5}
+        stroke="#60a5fa" strokeWidth={2} strokeDasharray="4,3" />
+      <text x={PAD.left + 107} y={PAD.top + 9} fill={axisText} fontSize={9}>Spot</text>
+      <line x1={PAD.left + 130} x2={PAD.left + 142} y1={PAD.top + 5} y2={PAD.top + 5}
+        stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="3,2" />
+      <text x={PAD.left + 145} y={PAD.top + 9} fill={axisText} fontSize={9}>BE</text>
+      <line x1={PAD.left + 163} x2={PAD.left + 175} y1={PAD.top + 5} y2={PAD.top + 5}
+        stroke="#c084fc" strokeWidth={1.5} strokeDasharray="5,2" />
+      <text x={PAD.left + 178} y={PAD.top + 9} fill={axisText} fontSize={9}>Strike</text>
+      {hedgeLevels.length > 0 && (
+        <>
+          <line x1={PAD.left + 210} x2={PAD.left + 222} y1={PAD.top + 5} y2={PAD.top + 5}
+            stroke="#fb923c" strokeWidth={1.5} strokeDasharray="4,3" />
+          <text x={PAD.left + 225} y={PAD.top + 9} fill={axisText} fontSize={9}>Hedge</text>
+        </>
+      )}
     </svg>
   )
 }
-
 // ── Greek summary card ─────────────────────────────────────────────────────
 function GreekCard({ label, value, d = 2, colorize = false, icon, sub, unit }: {
   label: string; value: number | null | undefined; d?: number
@@ -404,8 +571,6 @@ function StrategyLivePanel({
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function DeltaNeutral() {
-  const { mode } = useThemeStore()
-  const isDark = mode === 'dark'
   const { fnoExchanges, defaultFnoExchange, defaultUnderlyings } = useSupportedExchanges()
 
   const [exchange, setExchange] = useState(defaultFnoExchange || 'NFO')
@@ -420,6 +585,9 @@ export default function DeltaNeutral() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const reqRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoLoadedRef = useRef(false)
+  const pendingExpiryRef = useRef<string | null>(null)
+  const expiriesRef = useRef<string[]>([])
 
   // Strategy live-data state
   const [dnState, setDnState] = useState<DnStrategyState | null>(null)
@@ -475,11 +643,37 @@ export default function DeltaNeutral() {
       .then(r => {
         if (cancelled || r.status !== 'success' || !r.expiries.length) return
         setExpiries(r.expiries)
-        setExpiry(r.expiries[0])
+        // Prefer the strategy's expiry if pending, otherwise first available
+        const preferred = pendingExpiryRef.current
+        pendingExpiryRef.current = null
+        setExpiry(preferred && r.expiries.includes(preferred) ? preferred : r.expiries[0])
       })
       .catch(() => {})
     return () => { cancelled = true }
   }, [underlying, exchange])
+
+  // Keep expiriesRef in sync so auto-load can read current value without stale closure
+  useEffect(() => { expiriesRef.current = expiries }, [expiries])
+
+  // Auto-load from strategy state when entry is live
+  useEffect(() => {
+    if (!dnState?.entry_done || autoLoadedRef.current) return
+    const match = /^([A-Z]+)(\d{2}[A-Z]{3}\d{2})/.exec(dnState.ce_sym || '')
+    if (!match) return
+    const [, ul, rawExp] = match
+    const uiExp = rawExp.replace(/^(\d{2})([A-Z]{3})(\d{2})$/, '$1-$2-$3')
+    autoLoadedRef.current = true
+    pendingExpiryRef.current = uiExp
+    if (exchange !== 'NFO') { setExchange('NFO'); setUnderlying(ul); return }
+    if (underlying !== ul) { setUnderlying(ul); return }
+    // exchange + underlying already correct — apply expiry directly if expiries loaded
+    const curExpiries = expiriesRef.current
+    if (curExpiries.length > 0) {
+      pendingExpiryRef.current = null
+      setExpiry(curExpiries.includes(uiExp) ? uiExp : curExpiries[0])
+    }
+    // If expiries empty, the underlying useEffect will load them and consume pendingExpiryRef
+  }, [dnState]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll log to bottom on new entries
   useEffect(() => {
@@ -586,7 +780,7 @@ export default function DeltaNeutral() {
         <div>
           <h1 className="text-2xl font-bold">Delta Neutral Monitor</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Live portfolio Greeks, payoff at expiry and per-leg breakdown for algo-managed strategies
+            Live portfolio Greeks, live payoff and per-leg breakdown for algo-managed strategies
           </p>
         </div>
         {updatedAt && (
@@ -602,6 +796,12 @@ export default function DeltaNeutral() {
       {/* Controls */}
       <Card>
         <CardContent className="pt-4 pb-4">
+          {dnState?.entry_done && autoLoadedRef.current && (
+            <div className="flex items-center gap-2 mb-3 text-xs text-sky-400">
+              <Zap className="h-3 w-3" />
+              <span>Position auto-loaded from Delta Neutral v1 strategy</span>
+            </div>
+          )}
           <div className="flex flex-wrap items-end gap-3">
 
             <div className="space-y-1">
@@ -769,7 +969,7 @@ export default function DeltaNeutral() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-base flex items-center gap-2">
-                    Payoff at Expiry
+                    Live Payoff (BSM)
                     {allLinear.length > 0 && (
                       <Badge variant="secondary" className="text-xs font-normal">
                         incl. {allLinear.length} hedge/holding{allLinear.length !== 1 ? 's' : ''}
@@ -786,7 +986,7 @@ export default function DeltaNeutral() {
                 </div>
               </CardHeader>
               <CardContent>
-                <PayoffChart payoff={payoff} spotPrice={spot} breakevens={bes} isDark={isDark} />
+                <PayoffChart payoff={payoff} spotPrice={spot} breakevens={bes} legs={legs} hedgeLegs={allLinear} />
               </CardContent>
             </Card>
           )}
